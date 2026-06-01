@@ -1,0 +1,40 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config \
+            protobuf-compiler protobuf-compiler-grpc \
+            libgrpc++-dev libprotobuf-dev \
+            libpq-dev libarrow-dev libflatbuffers-dev libgtest-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DMTDD_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  integration:
+    runs-on: ubuntu-24.04
+    needs: ubuntu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Integration smoke
+        run: docker compose up --build --abort-on-container-exit integration

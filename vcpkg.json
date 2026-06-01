@@ -1,0 +1,12 @@
+{
+  "name": "mtdd-server",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "grpc",
+    "protobuf",
+    "libpq",
+    "arrow",
+    "flatbuffers",
+    "gtest"
+  ]
+}

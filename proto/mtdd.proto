@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package mtdd;
+
+// Shard-side gRPC service. Each instance runs on a DB_HOST IP and receives
+// host_index so it knows which shard it represents.
+service MtddShard {
+  rpc Connect(ConnectRequest) returns (ConnectResponse);
+  // Legacy unary JSON result (MTDD_GRPC_RESULT_FORMAT=json).
+  rpc Query(QueryRequest) returns (QueryResponse);
+  // libpq-semantic query with FlatBuffers metadata + Arrow IPC batches.
+  rpc QueryStream(QueryRequest) returns (stream ResultChunk);
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+}
+
+enum ResponseFormat {
+  RESPONSE_FORMAT_UNSPECIFIED = 0;
+  RESPONSE_FORMAT_JSON = 1;
+  RESPONSE_FORMAT_ARROW = 2;
+}
+
+enum ChunkKind {
+  CHUNK_KIND_UNSPECIFIED = 0;
+  CHUNK_KIND_SCHEMA = 1;
+  CHUNK_KIND_BATCH = 2;
+  CHUNK_KIND_TRAILER = 3;
+  CHUNK_KIND_ERROR = 4;
+}
+
+// libpq connection keywords (PQconnectdbParams).
+message ConnectRequest {
+  int32 host_index = 1;
+  string dbname = 2;
+  string user = 3;
+  string password = 4;
+  int32 port = 5;
+  string host = 6;
+  string sslmode = 7;
+  string connect_timeout = 8;
+  string application_name = 9;
+  // Deprecated alias for dbname; clients may set either.
+  string database = 10;
+}
+
+message ConnectResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+// One bound parameter (PQexecParams).
+message QueryParam {
+  uint32 oid = 1;
+  int32 format = 2;
+  bytes value = 3;
+}
+
+// PQexecParams-style query envelope.
+message QueryRequest {
+  int32 host_index = 1;
+  string text = 2;
+  // Legacy JSON parameters (RESPONSE_FORMAT_JSON unary Query only).
+  string values_json = 3;
+  string name = 4;
+  string row_mode = 5;
+  string session_id = 6;
+  ResponseFormat response_format = 7;
+  repeated QueryParam params = 8;
+  // 0 = text results, 1 = binary (libpq resultFormat).
+  int32 result_format = 9;
+}
+
+message ResultChunk {
+  ChunkKind kind = 1;
+  bytes flatbuffer_meta = 2;
+  bytes arrow_ipc = 3;
+}
+
+message QueryResponse {
+  bool ok = 1;
+  string error = 2;
+  string result_json = 3;
+}
+
+message DisconnectRequest {
+  int32 host_index = 1;
+}
+
+message DisconnectResponse {
+  bool ok = 1;
+}

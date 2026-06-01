@@ -1,0 +1,11 @@
+{
+  "name": "mtdd-server-integration",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.6",
+    "@grpc/proto-loader": "^0.7.13",
+    "apache-arrow": "^21.1.0",
+    "flatbuffers": "^25.9.23"
+  }
+}

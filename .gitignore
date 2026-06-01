@@ -1,3 +1,9 @@
+# C++ build
+build/
+cmake-build-*/
+out/
+.vcpkg/
+
 # Logs
 logs
 *.log

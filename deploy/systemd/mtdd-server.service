@@ -1,0 +1,16 @@
+[Unit]
+Description=MTDD shard gRPC server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+Environment=MTDD_LISTEN=127.0.0.1:50051
+Environment=MTDD_HOST_INDEX=0
+Environment=MTDD_PG_HOST=127.0.0.1
+ExecStart=/usr/local/bin/mtdd_server
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

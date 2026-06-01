@@ -1,0 +1,10 @@
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
+find_package(PostgreSQL REQUIRED)
+find_package(Arrow CONFIG REQUIRED)
+find_package(flatbuffers CONFIG REQUIRED)
+find_package(GTest CONFIG)
+
+if(TARGET gRPC::grpc++_reflection)
+  set(MTDD_GRPC_REFLECTION gRPC::grpc++_reflection)
+endif()
