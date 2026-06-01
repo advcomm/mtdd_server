@@ -40,10 +40,11 @@ function promisifyUnary(client, method, request) {
   })
 }
 
-function queryStream(client, request) {
+function queryStream(client, request, deadlineMs = 30000) {
   return new Promise((resolve, reject) => {
     const chunks = []
-    const call = client.QueryStream(request)
+    const deadline = Date.now() + deadlineMs
+    const call = client.QueryStream(request, { deadline })
     call.on('data', (chunk) => chunks.push(chunk))
     call.on('error', reject)
     call.on('end', () => {
@@ -56,9 +57,15 @@ function queryStream(client, request) {
   })
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function main() {
   process.env.MTDD_GRPC_RESULT_FORMAT = 'arrow'
   const { client } = loadClient()
+
+  await sleep(2000)
 
   const connectResponse = await promisifyUnary(client, 'Connect', {
     host_index: 0,

@@ -156,6 +156,7 @@ grpc::Status MtddShardServiceImpl::QueryStream(
 
   PGresult* result = execution.result;
   if (result == nullptr) {
+    executor_copy->FinishQuery(execution);
     pg::PgErrorMeta meta;
     meta.message = "query returned null";
     WriteErrorChunk(writer, meta);
@@ -165,18 +166,18 @@ grpc::Status MtddShardServiceImpl::QueryStream(
   const ExecStatusType status = PQresultStatus(result);
   if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
     WriteErrorChunk(writer, pg::QueryExecutor::ExtractPgError(result));
-    PQclear(result);
+    executor_copy->FinishQuery(execution);
     return grpc::Status::OK;
   }
 
   if (context->IsCancelled()) {
-    PQclear(result);
+    executor_copy->FinishQuery(execution);
     return grpc::Status(grpc::StatusCode::CANCELLED, "cancelled");
   }
 
   try {
     auto encoded = codec::EncodePgResult(result, config_.arrow_batch_rows);
-    PQclear(result);
+    executor_copy->FinishQuery(execution);
 
     if (!encoded.ipc_batches.empty()) {
       mtdd::ResultChunk schema_chunk;
@@ -209,6 +210,7 @@ grpc::Status MtddShardServiceImpl::QueryStream(
     trailer_chunk.set_flatbuffer_meta(codec::EncodeResultTrailer(encoded.trailer));
     writer->Write(trailer_chunk);
   } catch (const std::exception& ex) {
+    executor_copy->FinishQuery(execution);
     pg::PgErrorMeta meta;
     meta.message = ex.what();
     WriteErrorChunk(writer, meta);

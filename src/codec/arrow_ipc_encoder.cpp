@@ -31,12 +31,12 @@ std::string CommandFromStatus(const char* status) {
   }
   std::string tag(status);
   const auto space = tag.find_first_of(" \t");
-  const std::string token = space == std::string::npos ? tag : tag.substr(0, space);
+  std::string token = space == std::string::npos ? tag : tag.substr(0, space);
   if (token.empty()) {
     return "SELECT";
   }
-  for (auto& ch : token) {
-    ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+  for (size_t i = 0; i < token.size(); ++i) {
+    token[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(token[i])));
   }
   return token;
 }
@@ -146,7 +146,18 @@ arrow::Status BuildColumnArray(
     ARROW_RETURN_NOT_OK(AppendInt32Column(&builder, result, col, row_begin, row_end));
     return builder.Finish(out);
   }
-  if (oid == kOidFloat4 || oid == kOidFloat8) {
+  if (oid == kOidFloat4) {
+    arrow::FloatBuilder builder;
+    for (int row = row_begin; row < row_end; ++row) {
+      if (PQgetisnull(result, row, col)) {
+        ARROW_RETURN_NOT_OK(builder.AppendNull());
+        continue;
+      }
+      ARROW_RETURN_NOT_OK(builder.Append(static_cast<float>(std::strtod(PQgetvalue(result, row, col), nullptr))));
+    }
+    return builder.Finish(out);
+  }
+  if (oid == kOidFloat8) {
     arrow::DoubleBuilder builder;
     ARROW_RETURN_NOT_OK(AppendDoubleColumn(&builder, result, col, row_begin, row_end));
     return builder.Finish(out);
@@ -163,8 +174,12 @@ arrow::Status BuildColumnArray(
 }
 
 std::string SerializeBatch(const std::shared_ptr<arrow::RecordBatch>& batch) {
-  arrow::io::BufferOutputStream out;
-  auto writer_result = arrow::ipc::MakeStreamWriter(&out, batch->schema());
+  auto out_result = arrow::io::BufferOutputStream::Create();
+  if (!out_result.ok()) {
+    throw std::runtime_error(out_result.status().ToString());
+  }
+  auto out = *out_result;
+  auto writer_result = arrow::ipc::MakeStreamWriter(out.get(), batch->schema());
   if (!writer_result.ok()) {
     throw std::runtime_error(writer_result.status().ToString());
   }
@@ -177,7 +192,7 @@ std::string SerializeBatch(const std::shared_ptr<arrow::RecordBatch>& batch) {
   if (!close_status.ok()) {
     throw std::runtime_error(close_status.ToString());
   }
-  auto buffer_result = out.Finish();
+  auto buffer_result = out->Finish();
   if (!buffer_result.ok()) {
     throw std::runtime_error(buffer_result.status().ToString());
   }
@@ -247,12 +262,15 @@ ArrowStreamChunks EncodePgResult(PGresult* result, int batch_rows) {
       type = arrow::boolean();
     } else if (oid == kOidInt2 || oid == kOidInt4) {
       type = arrow::int32();
-    } else if (oid == kOidFloat4 || oid == kOidFloat8) {
-      type = arrow::double();
+    } else if (oid == kOidFloat4) {
+      type = arrow::float32();
+    } else if (oid == kOidFloat8) {
+      type = arrow::float64();
     } else if (oid == kOidBytea) {
       type = arrow::binary();
     }
-    arrow_fields.push_back(arrow::field(PQfname(result, col), type));
+    const char* fname = PQfname(result, col);
+    arrow_fields.push_back(arrow::field(fname != nullptr ? fname : "", type));
   }
   auto schema = arrow::schema(arrow_fields);
 

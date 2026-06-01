@@ -33,11 +33,15 @@ services:
       - mtdd_server
     working_dir: /work
     volumes:
-      - ./integration:/work/integration:ro
+      - ./integration:/work/integration
+      - ./proto:/work/proto:ro
     environment:
       MTDD_SERVER_ADDR: mtdd_server:50051
       PG_HOST: postgres
       PG_USER: mtdd
       PG_PASSWORD: mtdd
       PG_DB: mtdd_test
-    command: ["bash", "/work/integration/run.sh"]
+    command:
+      - bash
+      - -c
+      - cd /work/integration && npm install --silent && node query_smoke.js

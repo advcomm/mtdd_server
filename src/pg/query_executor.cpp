@@ -39,6 +39,19 @@ PgErrorMeta QueryExecutor::ExtractPgError(PGresult* result) {
   return meta;
 }
 
+void QueryExecutor::FinishQuery(QueryExecution& execution) {
+  if (execution.result != nullptr) {
+    PQclear(execution.result);
+    execution.result = nullptr;
+  }
+
+  if (execution.pooled && execution.connection) {
+    pool_->Release(execution.connection, execution.connection_broken);
+    execution.connection.reset();
+    execution.pooled = false;
+  }
+}
+
 QueryExecution QueryExecutor::Execute(const mtdd::QueryRequest& request, std::string* error_out) {
   QueryExecution execution;
   const bool use_session = !request.session_id().empty();
@@ -49,6 +62,8 @@ QueryExecution QueryExecutor::Execute(const mtdd::QueryRequest& request, std::st
     if (!conn) {
       return execution;
     }
+    execution.connection = conn;
+    execution.pooled = false;
   } else {
     conn = pool_->Acquire();
     if (!conn) {
@@ -57,9 +72,12 @@ QueryExecution QueryExecutor::Execute(const mtdd::QueryRequest& request, std::st
       }
       return execution;
     }
+    execution.connection = conn;
+    execution.pooled = true;
   }
 
-  std::lock_guard<std::mutex> lock(conn->Mutex());
+  std::vector<std::string> param_storage;
+  param_storage.reserve(static_cast<size_t>(request.params_size()));
 
   const int param_count = request.params_size();
   std::vector<const char*> values;
@@ -73,40 +91,48 @@ QueryExecution QueryExecutor::Execute(const mtdd::QueryRequest& request, std::st
 
   for (int i = 0; i < param_count; ++i) {
     const auto& param = request.params(i);
-    values.push_back(param.value().data());
-    lengths.push_back(static_cast<int>(param.value().size()));
+    param_storage.push_back(param.value());
+    const std::string& stored = param_storage.back();
+    if (stored.empty() && param.format() == 0) {
+      values.push_back(nullptr);
+      lengths.push_back(0);
+    } else {
+      values.push_back(stored.data());
+      lengths.push_back(static_cast<int>(stored.size()));
+    }
     formats.push_back(param.format());
     types.push_back(param.oid() == 0 ? 0 : static_cast<Oid>(param.oid()));
   }
 
   const int result_format = request.result_format() != 0 ? 1 : 0;
 
-  PGresult* result = PQexecParams(
-      conn->Raw(),
-      request.text().c_str(),
-      param_count,
-      types.empty() ? nullptr : types.data(),
-      values.empty() ? nullptr : values.data(),
-      lengths.empty() ? nullptr : lengths.data(),
-      formats.empty() ? nullptr : formats.data(),
-      result_format);
+  {
+    std::lock_guard<std::mutex> lock(conn->Mutex());
 
-  const ExecStatusType status = result != nullptr ? PQresultStatus(result) : PGRES_FATAL_ERROR;
-  const bool ok = status == PGRES_TUPLES_OK || status == PGRES_COMMAND_OK;
+    PGresult* result = PQexecParams(
+        conn->Raw(),
+        request.text().c_str(),
+        param_count,
+        types.empty() ? nullptr : types.data(),
+        values.empty() ? nullptr : values.data(),
+        lengths.empty() ? nullptr : lengths.data(),
+        formats.empty() ? nullptr : formats.data(),
+        result_format);
 
-  if (!ok) {
-    execution.result = result;
-    execution.connection_broken = conn->IsHealthy() == false;
-    if (!use_session) {
-      pool_->Release(conn, execution.connection_broken);
+    const ExecStatusType status = result != nullptr ? PQresultStatus(result) : PGRES_FATAL_ERROR;
+    const bool ok = status == PGRES_TUPLES_OK || status == PGRES_COMMAND_OK;
+
+    execution.connection_broken = !conn->IsHealthy();
+
+    if (!ok) {
+      execution.result = result;
+      if (!use_session) {
+        FinishQuery(execution);
+      }
+      return execution;
     }
-    return execution;
-  }
 
-  execution.result = result;
-
-  if (!use_session) {
-    pool_->Release(conn, false);
+    execution.result = result;
   }
 
   return execution;

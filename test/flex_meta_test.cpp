@@ -21,11 +21,11 @@ TEST(FlexMetaTest, EncodesResultSchema) {
 
   const auto encoded = mtdd::codec::EncodeResultSchema(schema);
   const auto root = ToRef(encoded).AsMap();
-  EXPECT_EQ(root["command"].AsString(), "SELECT");
+  EXPECT_STREQ(root["command"].AsString().c_str(), "SELECT");
   const auto fields = root["fields"].AsVector();
   ASSERT_EQ(fields.size(), 1u);
   const auto field = fields[0].AsMap();
-  EXPECT_EQ(field["name"].AsString(), "id");
+  EXPECT_STREQ(field["name"].AsString().c_str(), "id");
   EXPECT_EQ(field["data_type_oid"].AsUInt32(), 23u);
 }
 
@@ -37,7 +37,7 @@ TEST(FlexMetaTest, EncodesTrailerAndError) {
 
   const auto trailer_bytes = mtdd::codec::EncodeResultTrailer(trailer);
   const auto trailer_map = ToRef(trailer_bytes).AsMap();
-  EXPECT_EQ(trailer_map["command_tag"].AsString(), "SELECT 2");
+  EXPECT_STREQ(trailer_map["command_tag"].AsString().c_str(), "SELECT 2");
   EXPECT_EQ(trailer_map["row_count"].AsInt64(), 2);
 
   mtdd::codec::PgError error;
@@ -45,6 +45,6 @@ TEST(FlexMetaTest, EncodesTrailerAndError) {
   error.message = "duplicate key";
   const auto error_bytes = mtdd::codec::EncodePgError(error);
   const auto error_map = ToRef(error_bytes).AsMap();
-  EXPECT_EQ(error_map["sqlstate"].AsString(), "23505");
-  EXPECT_EQ(error_map["message"].AsString(), "duplicate key");
+  EXPECT_STREQ(error_map["sqlstate"].AsString().c_str(), "23505");
+  EXPECT_STREQ(error_map["message"].AsString().c_str(), "duplicate key");
 }

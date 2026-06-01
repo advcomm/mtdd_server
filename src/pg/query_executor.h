@@ -4,6 +4,8 @@
 
 #include <memory>
 #include <string>
+
+#include "pg/pq_conn.h"
 #include <vector>
 
 #include "mtdd.pb.h"
@@ -20,19 +22,21 @@ struct PgErrorMeta {
 
 struct QueryExecution {
   PGresult* result = nullptr;
-  bool owns_result = true;
+  std::shared_ptr<PqConnection> connection;
+  bool pooled = false;
   bool connection_broken = false;
 };
 
 class ConnectionManager;
 class SessionStore;
-struct ConnectParams;
 
 class QueryExecutor {
  public:
   QueryExecutor(ConnectionManager* pool, SessionStore* sessions, const ConnectParams& session_defaults);
 
   QueryExecution Execute(const mtdd::QueryRequest& request, std::string* error_out);
+
+  void FinishQuery(QueryExecution& execution);
 
   static PgErrorMeta ExtractPgError(PGresult* result);
 
