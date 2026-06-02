@@ -1,6 +1,6 @@
 # MTDD server operations
 
-Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md) (client commit [bced8d7](https://github.com/advcomm/mtdd/commit/bced8d7e768b0c6b6953125f3803507ecc491e2f) — RPGB streaming; TypeScript under `src/`, built to `dist/`).
+Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md) (client commit [07c20bc](https://github.com/advcomm/mtdd/commit/07c20bcad5a6cbdfe76f885d00cee16723ba7849) — `grpc-query-codec`, RPGB streaming).
 
 ## Plain SQL only
 
@@ -113,7 +113,9 @@ This repo is the **source of truth** for [proto/mtdd.proto](../proto/mtdd.proto)
 MTDD_PROTO_REF=main ./scripts/sync-proto.sh
 ```
 
-Default upstream ref: `bced8d7e768b0c6b6953125f3803507ecc491e2f` ([@advcomm/mtdd](https://github.com/advcomm/mtdd) RPGB streaming / `ResultChunk.payload`).
+Default upstream ref: `07c20bcad5a6cbdfe76f885d00cee16723ba7849` ([@advcomm/mtdd](https://github.com/advcomm/mtdd) `grpc-query-codec` / `ResultChunk.payload`).
+
+Pair **@advcomm/mtdd@bced8d7** (or newer, **07c20bc** recommended) with **mtdd_server ≥ 765da45** for `QueryStream`.
 
 ## Integration tests
 

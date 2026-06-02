@@ -137,14 +137,14 @@ gRPC health starts `NOT_SERVING` until the first successful `Connect` probes Pos
 
 ## Proto sync
 
-[proto/mtdd.proto](proto/mtdd.proto) is the **source of truth**. The client copies from this repo via its `scripts/sync-proto.sh`. Verify alignment with the RPGB streaming client release:
+[proto/mtdd.proto](proto/mtdd.proto) is the **source of truth**. The client copies from this repo via its `scripts/sync-proto.sh`. Verify alignment with the paired client release:
 
 ```bash
 ./scripts/sync-proto.sh
-# MTDD_PROTO_REF=bced8d7e768b0c6b6953125f3803507ecc491e2f  (default)
+# MTDD_PROTO_REF=07c20bcad5a6cbdfe76f885d00cee16723ba7849  (default)
 ```
 
-CI runs this on every PR.
+Run manually from GitHub Actions → build → Run workflow (automatic CI on push/PR is disabled).
 
 ## Integration test (Docker)
 

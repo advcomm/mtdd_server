@@ -1,7 +1,7 @@
 'use strict'
 
 const resultMeta = require('../flatbuffers/result-meta-codec')
-const { decodeRawPgBatch, mockWireFormat } = require('./pg-binary-decode')
+const { decodeRawPgBatch } = require('./pg-binary-decode')
 
 const CHUNK_KIND_SCHEMA = 'CHUNK_KIND_SCHEMA'
 const CHUNK_KIND_BATCH = 'CHUNK_KIND_BATCH'
@@ -28,7 +28,7 @@ function buildQueryRequestPayload(hostIndex, req, sessionId) {
   return {
     host_index: hostIndex,
     text: req.text ?? '',
-    name: req.name ?? '',
+    name: '',
     row_mode: req.row_mode ?? '',
     session_id: sessionId ?? '',
     result_format: 1,
@@ -42,7 +42,7 @@ function pgFieldsFromSchema(schema) {
     dataTypeID: field.data_type_oid,
     tableID: field.table_oid,
     columnID: field.column_id,
-    format: mockWireFormat(field.data_type_oid ?? 0, field.format),
+    format: field.format ?? 0,
   }))
 }
 
