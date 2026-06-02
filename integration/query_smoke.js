@@ -1,12 +1,9 @@
 'use strict'
 
-const path = require('node:path')
 const grpc = require('@grpc/grpc-js')
 const protoLoader = require('@grpc/proto-loader')
-const {
-  decodeArrowStreamToPgResult,
-  buildQueryRequestPayload,
-} = require('./lib/grpc-arrow-client')
+const { buildQueryRequestPayload, decodeArrowStreamToPgResult } = require('./lib/grpc-arrow-client')
+const { assertProtoExists } = require('./lib/proto-path')
 
 const SERVER = process.env.MTDD_SERVER_ADDR || '127.0.0.1:50051'
 const PG = {
@@ -18,7 +15,7 @@ const PG = {
 }
 
 function loadClient() {
-  const protoPath = path.join(__dirname, '..', 'proto', 'mtdd.proto')
+  const protoPath = assertProtoExists()
   const packageDefinition = protoLoader.loadSync(protoPath, {
     keepCase: true,
     longs: String,

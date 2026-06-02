@@ -1,6 +1,6 @@
 # MTDD server operations
 
-Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md).
+Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md) (client commit [78961be](https://github.com/advcomm/mtdd/commit/78961bee2d157e251cbae5867cf070cda9364919) — TypeScript under `src/`, built to `dist/`).
 
 ## Plain SQL only
 
@@ -50,7 +50,15 @@ Clients use the same TLS env vars as [@advcomm/mtdd](https://github.com/advcomm/
 | `MTDD_GRPC_TLS_SERVER_NAME` | SNI override |
 | `MTDD_NOTIFY_TLS_*` | Notify coordinator TLS (falls back to `MTDD_GRPC_TLS_*`) |
 
-## Multi-shard LISTEN / NOTIFY
+### Client local dev (direct unix socket)
+
+When the app runs on the **same host** as a single-shard `mtdd_server` without nginx, the client can dial the socket directly:
+
+| Variable | Purpose |
+|----------|---------|
+| `MTDD_GRPC_UNIX_SOCKET` | e.g. `/run/mtdd/grpc.sock` — plain gRPC to the server (matches `MTDD_LISTEN`) |
+
+Do not combine with `MTDD_GRPC_TLS_*`. Multi-shard production must use nginx TCP per shard.
 
 Subscriptions are stored in **one coordinator process**. On shard-only nodes:
 
@@ -90,7 +98,7 @@ This repo is the **source of truth** for [proto/mtdd.proto](../proto/mtdd.proto)
 MTDD_PROTO_REF=main ./scripts/sync-proto.sh
 ```
 
-Default upstream ref: `9a9ae4f`.
+Default upstream ref: `78961bee2d157e251cbae5867cf070cda9364919` ([@advcomm/mtdd](https://github.com/advcomm/mtdd) TypeScript migration).
 
 ## Integration tests
 

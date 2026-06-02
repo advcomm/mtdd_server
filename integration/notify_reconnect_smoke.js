@@ -1,14 +1,14 @@
 'use strict'
 
-const path = require('node:path')
 const grpc = require('@grpc/grpc-js')
 const protoLoader = require('@grpc/proto-loader')
+const { assertProtoExists } = require('./lib/proto-path')
 
 const SERVER = process.env.MTDD_SERVER_ADDR || '127.0.0.1:50051'
 const CLIENT_ID = `integration-reconnect-${Date.now()}`
 
 function loadNotifyClient() {
-  const protoPath = path.join(__dirname, '..', 'proto', 'mtdd.proto')
+  const protoPath = assertProtoExists()
   const packageDefinition = protoLoader.loadSync(protoPath, {
     keepCase: true,
     longs: String,
@@ -51,7 +51,7 @@ async function main() {
 
   await sleep(200)
 
-  // Simulate watch drop (client reconnect path in grpc-notify-client.js)
+  // Simulate watch drop (client reconnect path in grpc-notify-client.ts)
   watchCall.cancel()
   await sleep(500)
 

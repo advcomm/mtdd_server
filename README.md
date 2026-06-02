@@ -2,7 +2,7 @@
 
 Shard-side gRPC server for [@advcomm/mtdd](https://github.com/advcomm/mtdd). Each instance runs on a database host behind nginx, accepts `Connect` / `QueryStream` / `Disconnect`, executes SQL on **local PostgreSQL** via libpq, and streams results as FlexBuffers metadata plus Apache Arrow IPC.
 
-The same binary can expose **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `grpc-notify-client.js` (client commit [f37b2d9](https://github.com/advcomm/mtdd/commit/f37b2d95e93ba444e69e2cf2e62ec30047debf28)).
+The same binary can expose **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `grpc-notify-client.ts` (client commit [78961be](https://github.com/advcomm/mtdd/commit/78961bee2d157e251cbae5867cf070cda9364919)).
 
 ## Requirements
 
@@ -63,7 +63,7 @@ Binary: `build/mtdd_server`
 
 Database credentials are supplied by the client in `Connect` (from app `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`).
 
-**TLS and compression** are handled by nginx in front of this process. `mtdd_server` uses plain gRPC over a unix domain socket only — do not set `MTDD_GRPC_TLS*`. Clients verify nginx with [f37b2d9+ TLS env vars](https://github.com/advcomm/mtdd/commit/f37b2d95e93ba444e69e2cf2e62ec30047debf28). See [docs/OPERATIONS.md](docs/OPERATIONS.md).
+**TLS and compression** are handled by nginx in front of this process. `mtdd_server` uses plain gRPC over a unix domain socket only — do not set `MTDD_GRPC_TLS*`. Clients verify nginx with [@advcomm/mtdd TLS env vars](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md#tls-client--nginx) (commit [78961be+](https://github.com/advcomm/mtdd/commit/78961bee2d157e251cbae5867cf070cda9364919)). See [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ### Production example
 
@@ -141,7 +141,7 @@ gRPC health starts `NOT_SERVING` until the first successful `Connect` probes Pos
 
 ```bash
 ./scripts/sync-proto.sh
-# MTDD_PROTO_REF=9a9ae4f  (default)
+# MTDD_PROTO_REF=78961bee2d157e251cbae5867cf070cda9364919  (default)
 ```
 
 CI runs this on every PR.
@@ -164,7 +164,7 @@ docker compose --profile shard-only up shard_only
 
 ## Wire format
 
-`QueryStream` chunk order: `SCHEMA` → `BATCH`* → `TRAILER`, or `ERROR` on failure. Column data is Arrow IPC; control metadata is FlexBuffers (same layout as the Node `result-meta-codec.js`).
+`QueryStream` chunk order: `SCHEMA` → `BATCH`* → `TRAILER`, or `ERROR` on failure. Column data is Arrow IPC; control metadata is FlexBuffers (same layout as the client `result-meta-codec.ts`).
 
 ## License
 

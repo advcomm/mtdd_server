@@ -11,7 +11,7 @@ service MtddShard {
   rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
 }
 
-// Coordinator-style LISTEN/NOTIFY transport (matches mtdd-notify-transport.js).
+// Coordinator-style LISTEN/NOTIFY transport (matches mtdd-notify-transport.ts).
 service MtddNotify {
   rpc Subscribe(NotifySubscribeRequest) returns (NotifyAck);
   rpc Unsubscribe(NotifyUnsubscribeRequest) returns (NotifyAck);
