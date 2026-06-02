@@ -96,6 +96,28 @@ void ValidateProductionConfig(const ServerConfig& config) {
   }
 }
 
+void LoadGrpcTlsConfig(GrpcTlsConfig& tls) {
+  tls.enabled = ParseBoolEnv(std::getenv("MTDD_GRPC_TLS"), false);
+
+  if (const char* cert = std::getenv("MTDD_GRPC_TLS_CERT_FILE"); cert != nullptr) {
+    tls.cert_file = cert;
+  }
+  if (const char* key = std::getenv("MTDD_GRPC_TLS_KEY_FILE"); key != nullptr) {
+    tls.key_file = key;
+  }
+  if (const char* client_ca = std::getenv("MTDD_GRPC_TLS_CLIENT_CA_FILE"); client_ca != nullptr) {
+    tls.client_ca_file = client_ca;
+  }
+
+  if (tls.enabled || !tls.cert_file.empty() || !tls.key_file.empty()) {
+    tls.enabled = true;
+    if (tls.cert_file.empty() || tls.key_file.empty()) {
+      throw std::runtime_error(
+          "MTDD_GRPC_TLS_CERT_FILE and MTDD_GRPC_TLS_KEY_FILE are required when MTDD_GRPC_TLS is enabled");
+    }
+  }
+}
+
 }  // namespace
 
 bool IsLoopbackAddress(const std::string& address) {
@@ -137,6 +159,7 @@ ServerConfig LoadConfigFromEnv() {
   config.health_probe_interval_sec = ParsePositiveInt(
       "MTDD_HEALTH_PROBE_INTERVAL_SEC", std::getenv("MTDD_HEALTH_PROBE_INTERVAL_SEC"), config.health_probe_interval_sec);
   config.health_require_pg = ParseBoolEnv(std::getenv("MTDD_HEALTH_REQUIRE_PG"), true);
+  LoadGrpcTlsConfig(config.grpc_tls);
 
   ValidateProductionConfig(config);
   return config;

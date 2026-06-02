@@ -6,6 +6,13 @@
 
 namespace mtdd {
 
+struct GrpcTlsConfig {
+  bool enabled = false;
+  std::string cert_file;
+  std::string key_file;
+  std::string client_ca_file;
+};
+
 struct ServerConfig {
   std::string listen_address = "127.0.0.1";
   int listen_port = 50051;
@@ -25,6 +32,7 @@ struct ServerConfig {
   int max_notify_channel_bytes = 63;
   int health_probe_interval_sec = 30;
   bool health_require_pg = true;
+  GrpcTlsConfig grpc_tls;
 };
 
 ServerConfig LoadConfigFromEnv();

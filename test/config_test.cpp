@@ -26,6 +26,14 @@ TEST(ConfigTest, ProductionRequiresHostIndex) {
   unsetenv("MTDD_LISTEN");
 }
 
+TEST(ConfigTest, GrpcTlsRequiresCertAndKey) {
+  setenv("MTDD_GRPC_TLS", "1", 1);
+  unsetenv("MTDD_GRPC_TLS_CERT_FILE");
+  unsetenv("MTDD_GRPC_TLS_KEY_FILE");
+  EXPECT_THROW(mtdd::LoadConfigFromEnv(), std::runtime_error);
+  unsetenv("MTDD_GRPC_TLS");
+}
+
 TEST(ConfigTest, IsLoopbackAddress) {
   EXPECT_TRUE(mtdd::IsLoopbackAddress("127.0.0.1"));
   EXPECT_TRUE(mtdd::IsLoopbackAddress("::1"));

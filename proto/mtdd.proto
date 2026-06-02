@@ -17,7 +17,6 @@ service MtddNotify {
   rpc Unsubscribe(NotifyUnsubscribeRequest) returns (NotifyAck);
   rpc UnsubscribeAll(NotifyUnsubscribeAllRequest) returns (NotifyAck);
   rpc Publish(NotifyPublishRequest) returns (NotifyAck);
-  // Long-lived stream; server pushes NotifyMessage for this client_id.
   rpc Watch(NotifyWatchRequest) returns (stream NotifyMessage);
 }
 

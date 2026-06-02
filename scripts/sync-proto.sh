@@ -2,7 +2,7 @@
 # Compare local proto/mtdd.proto with upstream advcomm/mtdd.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REF="${MTDD_PROTO_REF:-51dc9f4caad545666b9aa6bc45c6b326a5279fd9}"
+REF="${MTDD_PROTO_REF:-f37b2d95e93ba444e69e2cf2e62ec30047debf28}"
 UPSTREAM="${MTDD_PROTO_URL:-https://raw.githubusercontent.com/advcomm/mtdd/${REF}/proto/mtdd.proto}"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT

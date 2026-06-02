@@ -8,6 +8,7 @@
 #include <string>
 
 #include "config.h"
+#include "grpc/server_credentials.h"
 #include "health/pg_health_monitor.h"
 #include "logging.h"
 #include "notify/registry.h"
@@ -52,7 +53,7 @@ int main() {
 
     const std::string listen_target = config.listen_address + ":" + std::to_string(config.listen_port);
     grpc::ServerBuilder builder;
-    builder.AddListeningPort(listen_target, grpc::InsecureServerCredentials());
+    builder.AddListeningPort(listen_target, mtdd::grpc_util::BuildServerCredentials(config.grpc_tls));
     builder.RegisterService(&shard_service);
     if (notify_service.has_value()) {
       builder.RegisterService(&notify_service.value());
@@ -75,7 +76,7 @@ int main() {
     std::signal(SIGINT, HandleSignal);
     std::signal(SIGTERM, HandleSignal);
 
-    mtdd::log::Info("listening", listen_target);
+    mtdd::log::Info("listening", listen_target + (config.grpc_tls.enabled ? " tls=1" : " tls=0"));
     g_server->Wait();
 
     health_monitor.Stop();

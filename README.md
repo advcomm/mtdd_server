@@ -2,7 +2,7 @@
 
 Shard-side gRPC server for [@advcomm/mtdd](https://github.com/advcomm/mtdd). Each instance runs on a database host behind nginx, accepts `Connect` / `QueryStream` / `Disconnect`, executes SQL on **local PostgreSQL** via libpq, and streams results as FlexBuffers metadata plus Apache Arrow IPC.
 
-The same binary can expose **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `grpc-notify-client.js` (client commit [51dc9f4](https://github.com/advcomm/mtdd/commit/51dc9f4caad545666b9aa6bc45c6b326a5279fd9)).
+The same binary can expose **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `grpc-notify-client.js` (client commit [f37b2d9](https://github.com/advcomm/mtdd/commit/f37b2d95e93ba444e69e2cf2e62ec30047debf28)).
 
 ## Requirements
 
@@ -57,8 +57,14 @@ Binary: `build/mtdd_server`
 | `MTDD_HEALTH_PROBE_INTERVAL_SEC` | `30` | Periodic PostgreSQL probe after first Connect |
 | `MTDD_HEALTH_REQUIRE_PG` | `1` | Set `0` on notify-only coordinator nodes |
 | `MTDD_ALLOW_PUBLIC_BIND` | `0` | Allow non-loopback bind in production |
+| `MTDD_GRPC_TLS` | `0` | Enable native gRPC TLS on the server listener |
+| `MTDD_GRPC_TLS_CERT_FILE` | _(unset)_ | Server certificate PEM path |
+| `MTDD_GRPC_TLS_KEY_FILE` | _(unset)_ | Server private key PEM path |
+| `MTDD_GRPC_TLS_CLIENT_CA_FILE` | _(unset)_ | Optional client CA for mTLS |
 
 Database credentials are supplied by the client in `Connect` (from app `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`).
+
+Pair server TLS with client [f37b2d9+ TLS env vars](https://github.com/advcomm/mtdd/commit/f37b2d95e93ba444e69e2cf2e62ec30047debf28) (`MTDD_GRPC_TLS_CA_FILE`, optional client cert). See [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ### Production example
 
@@ -105,6 +111,8 @@ Notify subscriptions are stored **in process memory**. All subscribed clients mu
 
 See [deploy/nginx/mtdd-notify-coordinator.conf](deploy/nginx/mtdd-notify-coordinator.conf) and [deploy/systemd/mtdd-notify-coordinator.service](deploy/systemd/mtdd-notify-coordinator.service).
 
+After a notify `Watch` stream drops, the client reconnects and re-issues `Subscribe` for known channels. Subscriptions persist on the server until `Unsubscribe` / `UnsubscribeAll`.
+
 ### Disconnect semantics
 
 `Disconnect` acknowledges client channel teardown only. It does **not** drain the shared connection pool or pinned sessions used by other app instances on the same shard.
@@ -130,13 +138,14 @@ gRPC health starts `NOT_SERVING` until the first successful `Connect` probes Pos
 
 ## Proto sync
 
-Keep [proto/mtdd.proto](proto/mtdd.proto) aligned with the client repo:
+[proto/mtdd.proto](proto/mtdd.proto) is the **source of truth**. The client copies from this repo via its `scripts/sync-proto.sh`. Verify alignment with a client release:
 
 ```bash
 ./scripts/sync-proto.sh
+# MTDD_PROTO_REF=f37b2d95e93ba444e69e2cf2e62ec30047debf28  (default)
 ```
 
-CI runs this on every PR. Override upstream ref with `MTDD_PROTO_REF=main`.
+CI runs this on every PR.
 
 ## Integration test (Docker)
 
