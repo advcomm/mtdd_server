@@ -15,11 +15,13 @@ struct ConnectParams {
   std::string user;
   std::string password;
   int connect_timeout_sec = 5;
+  int statement_timeout_ms = 0;
 };
 
 class PqConnection {
  public:
-  static std::unique_ptr<PqConnection> Connect(const ConnectParams& params, std::string* error_out);
+  static std::unique_ptr<PqConnection> Connect(const ConnectParams& params, std::string* error_out,
+                                               int statement_timeout_ms = 0);
   static std::unique_ptr<PqConnection> Adopt(PGconn* raw);
 
   ~PqConnection();

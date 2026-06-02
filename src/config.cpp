@@ -19,6 +19,18 @@ int ParsePositiveInt(const char* name, const char* value, int default_value) {
   return static_cast<int>(parsed);
 }
 
+int ParseNonNegativeInt(const char* name, const char* value, int default_value) {
+  if (value == nullptr || *value == '\0') {
+    return default_value;
+  }
+  char* end = nullptr;
+  long parsed = std::strtol(value, &end, 10);
+  if (end == value || *end != '\0' || parsed < 0) {
+    throw std::runtime_error(std::string(name) + " must be a non-negative integer");
+  }
+  return static_cast<int>(parsed);
+}
+
 std::optional<int32_t> ParseOptionalHostIndex(const char* value) {
   if (value == nullptr || *value == '\0') {
     return std::nullopt;
@@ -44,7 +56,51 @@ void ParseListen(const char* value, std::string& address, int& port) {
   port = ParsePositiveInt("MTDD_LISTEN port", listen.substr(colon + 1).c_str(), port);
 }
 
+bool ParseBoolEnv(const char* value, bool default_value) {
+  if (value == nullptr || *value == '\0') {
+    return default_value;
+  }
+  const std::string v(value);
+  if (v == "1" || v == "true" || v == "TRUE" || v == "yes" || v == "YES") {
+    return true;
+  }
+  if (v == "0" || v == "false" || v == "FALSE" || v == "no" || v == "NO") {
+    return false;
+  }
+  throw std::runtime_error(std::string("invalid boolean env value: ") + v);
+}
+
+bool IsProductionEnv(const char* value) {
+  if (value == nullptr || *value == '\0') {
+    return false;
+  }
+  const std::string v(value);
+  return v == "production" || v == "prod";
+}
+
+void ValidateProductionConfig(const ServerConfig& config) {
+  if (!config.production_mode) {
+    return;
+  }
+
+  if (!config.host_index.has_value()) {
+    throw std::runtime_error("MTDD_HOST_INDEX is required when MTDD_ENV=production");
+  }
+
+  if (!IsLoopbackAddress(config.listen_address)) {
+    const char* allow = std::getenv("MTDD_ALLOW_PUBLIC_BIND");
+    if (!ParseBoolEnv(allow, false)) {
+      throw std::runtime_error(
+          "MTDD_LISTEN must bind to loopback in production (set MTDD_ALLOW_PUBLIC_BIND=1 to override)");
+    }
+  }
+}
+
 }  // namespace
+
+bool IsLoopbackAddress(const std::string& address) {
+  return address == "127.0.0.1" || address == "::1" || address == "localhost";
+}
 
 ServerConfig LoadConfigFromEnv() {
   ServerConfig config;
@@ -67,6 +123,22 @@ ServerConfig LoadConfigFromEnv() {
   config.grpc_max_threads =
       ParsePositiveInt("MTDD_GRPC_MAX_THREADS", std::getenv("MTDD_GRPC_MAX_THREADS"), hw > 0 ? hw : 4);
 
+  config.production_mode = IsProductionEnv(std::getenv("MTDD_ENV"));
+  config.grpc_reflection = ParseBoolEnv(std::getenv("MTDD_GRPC_REFLECTION"), !config.production_mode);
+  config.notify_enabled = ParseBoolEnv(std::getenv("MTDD_NOTIFY_ENABLED"), true);
+  config.statement_timeout_ms =
+      ParseNonNegativeInt("MTDD_STATEMENT_TIMEOUT_MS", std::getenv("MTDD_STATEMENT_TIMEOUT_MS"), 0);
+  config.max_query_text_bytes = ParsePositiveInt(
+      "MTDD_MAX_QUERY_TEXT_BYTES", std::getenv("MTDD_MAX_QUERY_TEXT_BYTES"), config.max_query_text_bytes);
+  config.max_notify_payload_bytes = ParsePositiveInt(
+      "MTDD_MAX_NOTIFY_PAYLOAD_BYTES", std::getenv("MTDD_MAX_NOTIFY_PAYLOAD_BYTES"), config.max_notify_payload_bytes);
+  config.max_notify_channel_bytes = ParsePositiveInt(
+      "MTDD_MAX_NOTIFY_CHANNEL_BYTES", std::getenv("MTDD_MAX_NOTIFY_CHANNEL_BYTES"), config.max_notify_channel_bytes);
+  config.health_probe_interval_sec = ParsePositiveInt(
+      "MTDD_HEALTH_PROBE_INTERVAL_SEC", std::getenv("MTDD_HEALTH_PROBE_INTERVAL_SEC"), config.health_probe_interval_sec);
+  config.health_require_pg = ParseBoolEnv(std::getenv("MTDD_HEALTH_REQUIRE_PG"), true);
+
+  ValidateProductionConfig(config);
   return config;
 }
 

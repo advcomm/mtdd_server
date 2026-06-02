@@ -71,6 +71,7 @@ set(MTDD_SERVER_SOURCES
   src/notify/channel_key.cpp
   src/notify/registry.cpp
   src/service/mtdd_notify_service.cpp
+  src/health/pg_health_monitor.cpp
 )
 
 add_executable(mtdd_server ${MTDD_SERVER_SOURCES})
@@ -109,7 +110,9 @@ endif()
 
 install(TARGETS mtdd_server RUNTIME DESTINATION bin)
 install(FILES deploy/nginx/mtdd-grpc.conf DESTINATION share/mtdd_server/nginx)
+install(FILES deploy/nginx/mtdd-notify-coordinator.conf DESTINATION share/mtdd_server/nginx)
 install(FILES deploy/systemd/mtdd-server.service DESTINATION share/mtdd_server/systemd)
+install(FILES deploy/systemd/mtdd-notify-coordinator.service DESTINATION share/mtdd_server/systemd)
 
 if(MTDD_BUILD_TESTS AND (GTest_FOUND OR TARGET GTest::gtest))
   enable_testing()

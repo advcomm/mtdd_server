@@ -12,6 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Proto sync check
+        run: bash scripts/sync-proto.sh
+
       - name: Install dependencies
         run: |
           sudo apt-get update

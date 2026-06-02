@@ -1,0 +1,7 @@
+# Build context
+build/
+.git/
+.github/
+integration/node_modules/
+**/*.md
+!README.md

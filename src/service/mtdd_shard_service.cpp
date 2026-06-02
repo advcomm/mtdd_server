@@ -16,8 +16,8 @@ std::string ResolveDbName(const mtdd::ConnectRequest& request) {
 
 }  // namespace
 
-MtddShardServiceImpl::MtddShardServiceImpl(ServerConfig config)
-    : config_(std::move(config)), sessions_(config_.max_sessions) {}
+MtddShardServiceImpl::MtddShardServiceImpl(ServerConfig config, health::PgHealthMonitor* health_monitor)
+    : config_(std::move(config)), health_monitor_(health_monitor), sessions_(config_.max_sessions) {}
 
 pg::ConnectParams MtddShardServiceImpl::BuildConnectParams(const mtdd::ConnectRequest& request) const {
   pg::ConnectParams params;
@@ -27,11 +27,18 @@ pg::ConnectParams MtddShardServiceImpl::BuildConnectParams(const mtdd::ConnectRe
   params.user = request.user();
   params.password = request.password();
   params.connect_timeout_sec = config_.pg_connect_timeout_sec;
+  params.statement_timeout_ms = config_.statement_timeout_ms;
   return params;
 }
 
 bool MtddShardServiceImpl::ValidateHostIndex(int32_t host_index, std::string* message) const {
   if (!config_.host_index.has_value()) {
+    if (config_.production_mode) {
+      if (message != nullptr) {
+        *message = "MTDD_HOST_INDEX is required in production";
+      }
+      return false;
+    }
     log::Warn("host_index_validation_skipped", "MTDD_HOST_INDEX unset (dev mode)");
     return true;
   }
@@ -79,6 +86,9 @@ grpc::Status MtddShardServiceImpl::Connect(
   if (!pool_.Connect(&error)) {
     response->set_ok(false);
     response->set_message(error);
+    if (health_monitor_ != nullptr) {
+      health_monitor_->OnConnectFailure();
+    }
     return grpc::Status::OK;
   }
 
@@ -86,6 +96,10 @@ grpc::Status MtddShardServiceImpl::Connect(
     std::lock_guard<std::mutex> lock(state_mutex_);
     connect_params_ = params;
     executor_ = std::make_unique<pg::QueryExecutor>(&pool_, &sessions_, params);
+  }
+
+  if (health_monitor_ != nullptr) {
+    health_monitor_->OnConnectSuccess(params, config_.statement_timeout_ms);
   }
 
   response->set_ok(true);
@@ -121,6 +135,10 @@ grpc::Status MtddShardServiceImpl::QueryStream(
 
   if (!EnsureArrowFormat(*request, &message)) {
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, message);
+  }
+
+  if (static_cast<int>(request->text().size()) > config_.max_query_text_bytes) {
+    return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "query text exceeds MTDD_MAX_QUERY_TEXT_BYTES");
   }
 
   std::unique_ptr<pg::QueryExecutor> executor_copy;
@@ -215,15 +233,8 @@ grpc::Status MtddShardServiceImpl::Disconnect(
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, message);
   }
 
-  sessions_.CloseAll();
-  pool_.CloseAll();
-
-  {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    connect_params_.reset();
-    executor_.reset();
-  }
-
+  // Client channel teardown only; shared pool and pinned sessions remain for other apps.
+  log::Info("disconnect", "acknowledged (shared pool unchanged)");
   response->set_ok(true);
   return grpc::Status::OK;
 }

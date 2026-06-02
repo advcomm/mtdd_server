@@ -2,7 +2,7 @@
 
 Shard-side gRPC server for [@advcomm/mtdd](https://github.com/advcomm/mtdd). Each instance runs on a database host behind nginx, accepts `Connect` / `QueryStream` / `Disconnect`, executes SQL on **local PostgreSQL** via libpq, and streams results as FlexBuffers metadata plus Apache Arrow IPC.
 
-The same process also exposes **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `mtdd-notify-transport.js` (see client commit [e131cf8](https://github.com/advcomm/mtdd/commit/e131cf86c7c322bd28516f494e7a91c95a702902)).
+The same binary can expose **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `grpc-notify-client.js` (client commit [51dc9f4](https://github.com/advcomm/mtdd/commit/51dc9f4caad545666b9aa6bc45c6b326a5279fd9)).
 
 ## Requirements
 
@@ -40,15 +40,36 @@ Binary: `build/mtdd_server`
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MTDD_LISTEN` | `127.0.0.1:50051` | gRPC bind address |
-| `MTDD_HOST_INDEX` | _(unset)_ | Required in production; must match client `Connect.host_index` |
+| `MTDD_ENV` | _(unset)_ | Set to `production` to enforce host index and loopback bind |
+| `MTDD_HOST_INDEX` | _(unset)_ | Required when `MTDD_ENV=production`; must match client `Connect.host_index` |
 | `MTDD_PG_HOST` | `127.0.0.1` | libpq host (local Postgres) |
 | `MTDD_POOL_SIZE` | `8` | Pool size for non-session queries |
 | `MTDD_ARROW_BATCH_ROWS` | `10000` | Max rows per Arrow IPC batch |
 | `MTDD_PG_CONNECT_TIMEOUT_SEC` | `5` | libpq connect timeout |
 | `MTDD_MAX_SESSIONS` | `512` | Pinned `session_id` connections |
 | `MTDD_GRPC_MAX_THREADS` | CPU count | gRPC sync server threads |
+| `MTDD_NOTIFY_ENABLED` | `1` | Register `MtddNotify` (`0` on shard-only nodes) |
+| `MTDD_GRPC_REFLECTION` | `0` in production | Proto reflection for debugging |
+| `MTDD_STATEMENT_TIMEOUT_MS` | `0` | PostgreSQL `statement_timeout` (0 = disabled) |
+| `MTDD_MAX_QUERY_TEXT_BYTES` | `1048576` | Max SQL text size |
+| `MTDD_MAX_NOTIFY_PAYLOAD_BYTES` | `65535` | Max NOTIFY payload |
+| `MTDD_MAX_NOTIFY_CHANNEL_BYTES` | `63` | Max channel name length |
+| `MTDD_HEALTH_PROBE_INTERVAL_SEC` | `30` | Periodic PostgreSQL probe after first Connect |
+| `MTDD_HEALTH_REQUIRE_PG` | `1` | Set `0` on notify-only coordinator nodes |
+| `MTDD_ALLOW_PUBLIC_BIND` | `0` | Allow non-loopback bind in production |
 
 Database credentials are supplied by the client in `Connect` (from app `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`).
+
+### Production example
+
+```bash
+export MTDD_ENV=production
+export MTDD_LISTEN=127.0.0.1:50051
+export MTDD_HOST_INDEX=0
+export MTDD_PG_HOST=127.0.0.1
+export MTDD_NOTIFY_ENABLED=1
+export MTDD_GRPC_REFLECTION=0
+```
 
 ## Client setup
 
@@ -58,14 +79,14 @@ Production apps must use Arrow streaming:
 export MTDD_GRPC_RESULT_FORMAT=arrow
 export MTDD_GRPC_PORT=50051
 export DB_HOST='["10.0.1.10","10.0.1.11"]'
+# Multi-shard: point all apps at one notify coordinator
+export MTDD_NOTIFY_URL=10.0.0.100:50051
 node --require @advcomm/mtdd/register app.js
 ```
 
-Unary JSON `Query` was removed from the proto; use `QueryStream` with `MTDD_GRPC_RESULT_FORMAT=arrow`.
-
 ## LISTEN / NOTIFY
 
-`LISTEN`, `UNLISTEN`, and `NOTIFY` SQL is handled **client-side** — it never goes through `QueryStream`. When the client is configured with a notify coordinator URL, it uses the **`MtddNotify`** gRPC service instead:
+`LISTEN`, `UNLISTEN`, and `NOTIFY` SQL is handled **client-side** — it never goes through `QueryStream`. The client uses **`MtddNotify`** gRPC when not mocking:
 
 | RPC | Purpose |
 |-----|---------|
@@ -75,14 +96,23 @@ Unary JSON `Query` was removed from the proto; use `QueryStream` with `MTDD_GRPC
 | `Publish` | Fan out `{ channel, payload, process_id }` to subscribers |
 | `Watch` | Server stream of notifications for `client_id` |
 
-Channel keys use `${tid_scope}:${channel}` where `tid_scope` is `__global__` or a tenant id (matches `resolveTidScope` on the client). `process_id` is `0` until real backend pids are wired.
+### Coordinator deployment
 
-`MtddNotify` is registered on the **same gRPC port** as `MtddShard` (`MTDD_LISTEN`). Point the client at this endpoint when `MTDD_NOTIFY_URL` gRPC transport is enabled in `@advcomm/mtdd`.
+Notify subscriptions are stored **in process memory**. All subscribed clients must use the **same coordinator endpoint**:
+
+- **Single shard:** client defaults to first `DB_HOST` write IP + `MTDD_GRPC_PORT` (no `MTDD_NOTIFY_URL` needed).
+- **Multi-shard:** set `MTDD_NOTIFY_URL` on every app to one host. Run notify on that host only, or set `MTDD_NOTIFY_ENABLED=0` on other shards.
+
+See [deploy/nginx/mtdd-notify-coordinator.conf](deploy/nginx/mtdd-notify-coordinator.conf) and [deploy/systemd/mtdd-notify-coordinator.service](deploy/systemd/mtdd-notify-coordinator.service).
+
+### Disconnect semantics
+
+`Disconnect` acknowledges client channel teardown only. It does **not** drain the shared connection pool or pinned sessions used by other app instances on the same shard.
 
 ## Deployment
 
 1. Run PostgreSQL on localhost on each shard VM.
-2. Run `mtdd_server` bound to loopback (`MTDD_LISTEN=127.0.0.1:50051`).
+2. Run `mtdd_server` bound to loopback (`MTDD_LISTEN=127.0.0.1:50051`, `MTDD_ENV=production`).
 3. Configure nginx HTTP/2 gRPC proxy on the host IP — see [deploy/nginx/mtdd-grpc.conf](deploy/nginx/mtdd-grpc.conf).
 4. Set `MTDD_HOST_INDEX` to the shard’s index in `DB_HOST` — see [deploy/systemd/mtdd-server.service](deploy/systemd/mtdd-server.service).
 
@@ -91,7 +121,12 @@ flowchart LR
   App[Node app + mtdd] -->|gRPC :50051| Nginx[nginx on shard IP]
   Nginx -->|grpc_pass| Server[mtdd_server loopback]
   Server -->|libpq| PG[(PostgreSQL)]
+  App -->|MTDD_NOTIFY_URL| NotifyCoord[notify coordinator]
 ```
+
+### Health checks
+
+gRPC health starts `NOT_SERVING` until the first successful `Connect` probes PostgreSQL. Use `grpc.health.v1.Health/Check` for load balancers and orchestrators. Notify-only coordinators with `MTDD_HEALTH_REQUIRE_PG=0` report `SERVING` at startup.
 
 ## Proto sync
 
@@ -101,13 +136,23 @@ Keep [proto/mtdd.proto](proto/mtdd.proto) aligned with the client repo:
 ./scripts/sync-proto.sh
 ```
 
+CI runs this on every PR. Override upstream ref with `MTDD_PROTO_REF=main`.
+
 ## Integration test (Docker)
 
 ```bash
 docker compose up --build --abort-on-container-exit integration
 ```
 
-This builds the server, starts Postgres, runs Connect → QueryStream → session transaction → Disconnect smoke tests, then Subscribe → Publish → Watch notify tests.
+Compose profiles:
+
+```bash
+# Notify-only coordinator (no Postgres health requirement)
+docker compose --profile notify-coordinator up notify_coordinator
+
+# Shard without MtddNotify
+docker compose --profile shard-only up shard_only
+```
 
 ## Wire format
 

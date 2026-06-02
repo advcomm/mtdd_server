@@ -7,6 +7,34 @@
 
 namespace mtdd::log {
 
+inline std::string JsonEscape(std::string value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (const char ch : value) {
+    switch (ch) {
+      case '\\':
+        out += "\\\\";
+        break;
+      case '"':
+        out += "\\\"";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        out += ch;
+        break;
+    }
+  }
+  return out;
+}
+
 inline std::mutex& Mutex() {
   static std::mutex m;
   return m;
@@ -14,27 +42,27 @@ inline std::mutex& Mutex() {
 
 inline void Info(const std::string& event, const std::string& detail = {}) {
   std::lock_guard<std::mutex> lock(Mutex());
-  std::cerr << "{\"level\":\"info\",\"event\":\"" << event << "\"";
+  std::cerr << "{\"level\":\"info\",\"event\":\"" << JsonEscape(event) << "\"";
   if (!detail.empty()) {
-    std::cerr << ",\"detail\":\"" << detail << "\"";
+    std::cerr << ",\"detail\":\"" << JsonEscape(detail) << "\"";
   }
   std::cerr << "}\n";
 }
 
 inline void Warn(const std::string& event, const std::string& detail = {}) {
   std::lock_guard<std::mutex> lock(Mutex());
-  std::cerr << "{\"level\":\"warn\",\"event\":\"" << event << "\"";
+  std::cerr << "{\"level\":\"warn\",\"event\":\"" << JsonEscape(event) << "\"";
   if (!detail.empty()) {
-    std::cerr << ",\"detail\":\"" << detail << "\"";
+    std::cerr << ",\"detail\":\"" << JsonEscape(detail) << "\"";
   }
   std::cerr << "}\n";
 }
 
 inline void Error(const std::string& event, const std::string& detail = {}) {
   std::lock_guard<std::mutex> lock(Mutex());
-  std::cerr << "{\"level\":\"error\",\"event\":\"" << event << "\"";
+  std::cerr << "{\"level\":\"error\",\"event\":\"" << JsonEscape(event) << "\"";
   if (!detail.empty()) {
-    std::cerr << ",\"detail\":\"" << detail << "\"";
+    std::cerr << ",\"detail\":\"" << JsonEscape(detail) << "\"";
   }
   std::cerr << "}\n";
 }
@@ -48,7 +76,7 @@ class ScopedTimer {
                         std::chrono::steady_clock::now() - start_)
                         .count();
     std::lock_guard<std::mutex> lock(Mutex());
-    std::cerr << "{\"level\":\"info\",\"event\":\"" << event_ << "\",\"duration_ms\":" << ms << "}\n";
+    std::cerr << "{\"level\":\"info\",\"event\":\"" << JsonEscape(event_) << "\",\"duration_ms\":" << ms << "}\n";
   }
 
  private:

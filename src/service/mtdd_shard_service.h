@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "config.h"
+#include "health/pg_health_monitor.h"
 #include "pg/connection_manager.h"
 #include "pg/query_executor.h"
 #include "pg/session_store.h"
@@ -16,7 +17,7 @@ namespace mtdd::service {
 
 class MtddShardServiceImpl final : public mtdd::MtddShard::Service {
  public:
-  explicit MtddShardServiceImpl(ServerConfig config);
+  MtddShardServiceImpl(ServerConfig config, health::PgHealthMonitor* health_monitor);
 
   grpc::Status Connect(grpc::ServerContext* context, const mtdd::ConnectRequest* request,
                        mtdd::ConnectResponse* response) override;
@@ -34,6 +35,7 @@ class MtddShardServiceImpl final : public mtdd::MtddShard::Service {
   void WriteErrorChunk(grpc::ServerWriter<mtdd::ResultChunk>* writer, const pg::PgErrorMeta& error);
 
   ServerConfig config_;
+  health::PgHealthMonitor* health_monitor_ = nullptr;
   mutable std::mutex state_mutex_;
   pg::ConnectionManager pool_;
   pg::SessionStore sessions_;

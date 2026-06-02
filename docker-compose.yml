@@ -17,6 +17,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      target: runtime
     depends_on:
       postgres:
         condition: service_healthy
@@ -24,13 +25,52 @@ services:
       MTDD_LISTEN: 0.0.0.0:50051
       MTDD_HOST_INDEX: 0
       MTDD_PG_HOST: postgres
+      MTDD_NOTIFY_ENABLED: 1
+      MTDD_HEALTH_REQUIRE_PG: 1
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test: ["CMD", "pgrep", "-x", "mtdd_server"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notify_coordinator:
+    profiles: ["notify-coordinator"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runtime
+    environment:
+      MTDD_LISTEN: 0.0.0.0:50051
+      MTDD_NOTIFY_ENABLED: 1
+      MTDD_HEALTH_REQUIRE_PG: 0
+    ports:
+      - "50052:50051"
+
+  shard_only:
+    profiles: ["shard-only"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MTDD_LISTEN: 0.0.0.0:50051
+      MTDD_HOST_INDEX: 0
+      MTDD_PG_HOST: postgres
+      MTDD_NOTIFY_ENABLED: 0
     ports:
       - "50051:50051"
 
   integration:
     image: node:20-bookworm
     depends_on:
-      - mtdd_server
+      mtdd_server:
+        condition: service_healthy
     working_dir: /work
     volumes:
       - ./integration:/work/integration

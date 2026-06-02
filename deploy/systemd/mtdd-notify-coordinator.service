@@ -1,18 +1,16 @@
 [Unit]
-Description=MTDD shard gRPC server
-After=network.target postgresql.service
-Wants=postgresql.service
+Description=MTDD notify coordinator (MtddNotify only deployment)
+After=network.target
 
 [Service]
 Type=simple
 User=mtdd
 Group=mtdd
-EnvironmentFile=-/etc/mtdd/mtdd-server.env
+EnvironmentFile=-/etc/mtdd/mtdd-notify.env
 Environment=MTDD_ENV=production
 Environment=MTDD_LISTEN=127.0.0.1:50051
-Environment=MTDD_HOST_INDEX=0
-Environment=MTDD_PG_HOST=127.0.0.1
 Environment=MTDD_NOTIFY_ENABLED=1
+Environment=MTDD_HEALTH_REQUIRE_PG=0
 Environment=MTDD_GRPC_REFLECTION=0
 ExecStart=/usr/local/bin/mtdd_server
 Restart=on-failure
@@ -22,7 +20,6 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/log/mtdd
 
 [Install]
 WantedBy=multi-user.target

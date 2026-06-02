@@ -19,3 +19,12 @@ target_include_directories(mtdd_notify_registry_test PRIVATE
 )
 
 add_test(NAME notify_registry_test COMMAND mtdd_notify_registry_test)
+
+add_executable(mtdd_config_test
+  config_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/config.cpp
+)
+target_link_libraries(mtdd_config_test PRIVATE GTest::gtest GTest::gtest_main)
+target_include_directories(mtdd_config_test PRIVATE "${CMAKE_SOURCE_DIR}/src")
+
+add_test(NAME config_test COMMAND mtdd_config_test)
