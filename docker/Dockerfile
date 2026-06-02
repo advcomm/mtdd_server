@@ -51,13 +51,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libflatbuffers-dev \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -u 10001 -s /usr/sbin/nologin mtdd
+    && useradd -r -u 10001 -s /usr/sbin/nologin mtdd \
+    && mkdir -p /run/mtdd && chown mtdd:mtdd /run/mtdd
 
 COPY --from=builder /src/build/mtdd_server /usr/local/bin/mtdd_server
 
 USER mtdd
-ENV MTDD_LISTEN=127.0.0.1:50051
-EXPOSE 50051
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD pgrep -x mtdd_server >/dev/null || exit 1
+ENV MTDD_LISTEN=unix:/run/mtdd/grpc.sock
+ENV MTDD_UNIX_SOCKET_MODE=666
 CMD ["/usr/local/bin/mtdd_server"]

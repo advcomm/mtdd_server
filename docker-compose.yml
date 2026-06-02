@@ -22,19 +22,31 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      MTDD_LISTEN: 0.0.0.0:50051
+      MTDD_LISTEN: unix:/run/mtdd/grpc.sock
+      MTDD_UNIX_SOCKET_MODE: 666
       MTDD_HOST_INDEX: 0
       MTDD_PG_HOST: postgres
       MTDD_NOTIFY_ENABLED: 1
       MTDD_HEALTH_REQUIRE_PG: 1
-    ports:
-      - "50051:50051"
+    volumes:
+      - mtdd_socket:/run/mtdd
     healthcheck:
       test: ["CMD", "pgrep", "-x", "mtdd_server"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      mtdd_server:
+        condition: service_healthy
+    volumes:
+      - mtdd_socket:/run/mtdd
+      - ./docker/nginx-mtdd.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "50051:50051"
 
   notify_coordinator:
     profiles: ["notify-coordinator"]
@@ -43,11 +55,12 @@ services:
       dockerfile: docker/Dockerfile
       target: runtime
     environment:
-      MTDD_LISTEN: 0.0.0.0:50051
+      MTDD_LISTEN: unix:/run/mtdd/grpc.sock
+      MTDD_UNIX_SOCKET_MODE: 666
       MTDD_NOTIFY_ENABLED: 1
       MTDD_HEALTH_REQUIRE_PG: 0
-    ports:
-      - "50052:50051"
+    volumes:
+      - notify_socket:/run/mtdd
 
   shard_only:
     profiles: ["shard-only"]
@@ -59,16 +72,19 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      MTDD_LISTEN: 0.0.0.0:50051
+      MTDD_LISTEN: unix:/run/mtdd/grpc.sock
+      MTDD_UNIX_SOCKET_MODE: 666
       MTDD_HOST_INDEX: 0
       MTDD_PG_HOST: postgres
       MTDD_NOTIFY_ENABLED: 0
-    ports:
-      - "50051:50051"
+    volumes:
+      - shard_socket:/run/mtdd
 
   integration:
     image: node:20-bookworm
     depends_on:
+      nginx:
+        condition: service_started
       mtdd_server:
         condition: service_healthy
     working_dir: /work
@@ -76,7 +92,7 @@ services:
       - ./integration:/work/integration
       - ./proto:/work/proto:ro
     environment:
-      MTDD_SERVER_ADDR: mtdd_server:50051
+      MTDD_SERVER_ADDR: nginx:50051
       PG_HOST: postgres
       PG_USER: mtdd
       PG_PASSWORD: mtdd
@@ -84,4 +100,9 @@ services:
     command:
       - bash
       - -c
-      - cd /work/integration && npm install --silent && node query_smoke.js && node notify_smoke.js && node notify_reconnect_smoke.js
+      - cd /work/integration && npm install --silent && node query_smoke.js && node plain_sql_smoke.js && node notify_smoke.js && node notify_reconnect_smoke.js
+
+volumes:
+  mtdd_socket:
+  notify_socket:
+  shard_socket:

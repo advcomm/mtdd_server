@@ -26,5 +26,18 @@ add_executable(mtdd_config_test
 )
 target_link_libraries(mtdd_config_test PRIVATE GTest::gtest GTest::gtest_main)
 target_include_directories(mtdd_config_test PRIVATE "${CMAKE_SOURCE_DIR}/src")
+if(NOT WIN32)
+  target_sources(mtdd_config_test PRIVATE ${CMAKE_SOURCE_DIR}/src/unix/unix_socket.cpp)
+endif()
 
 add_test(NAME config_test COMMAND mtdd_config_test)
+
+if(NOT WIN32)
+  add_executable(mtdd_unix_socket_test
+    unix_socket_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/unix/unix_socket.cpp
+  )
+  target_link_libraries(mtdd_unix_socket_test PRIVATE GTest::gtest GTest::gtest_main)
+  target_include_directories(mtdd_unix_socket_test PRIVATE "${CMAKE_SOURCE_DIR}/src")
+  add_test(NAME unix_socket_test COMMAND mtdd_unix_socket_test)
+endif()

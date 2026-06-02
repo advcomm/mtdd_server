@@ -6,16 +6,19 @@
 
 namespace mtdd {
 
-struct GrpcTlsConfig {
-  bool enabled = false;
-  std::string cert_file;
-  std::string key_file;
-  std::string client_ca_file;
+enum class ListenMode {
+  Unix,
+  Tcp,
 };
 
 struct ServerConfig {
+  ListenMode listen_mode = ListenMode::Unix;
+  std::string unix_socket_path = "/run/mtdd/grpc.sock";
   std::string listen_address = "127.0.0.1";
   int listen_port = 50051;
+  int unix_socket_mode = 0660;
+  int unix_socket_dir_mode = 0750;
+  bool unix_socket_create_dir = false;
   std::optional<int32_t> host_index;
   std::string pg_host = "127.0.0.1";
   int pool_size = 8;
@@ -32,10 +35,12 @@ struct ServerConfig {
   int max_notify_channel_bytes = 63;
   int health_probe_interval_sec = 30;
   bool health_require_pg = true;
-  GrpcTlsConfig grpc_tls;
 };
 
 ServerConfig LoadConfigFromEnv();
+
+std::string FormatListenTarget(const ServerConfig& config);
+std::string FormatListenLogLabel(const ServerConfig& config);
 
 bool IsLoopbackAddress(const std::string& address);
 

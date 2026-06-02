@@ -61,6 +61,7 @@ endif()
 set(MTDD_SERVER_SOURCES
   src/main.cpp
   src/config.cpp
+  src/unix/unix_socket.cpp
   src/codec/flex_meta.cpp
   src/codec/arrow_ipc_encoder.cpp
   src/pg/pq_conn.cpp
@@ -72,7 +73,6 @@ set(MTDD_SERVER_SOURCES
   src/notify/registry.cpp
   src/service/mtdd_notify_service.cpp
   src/health/pg_health_monitor.cpp
-  src/grpc/server_credentials.cpp
 )
 
 add_executable(mtdd_server ${MTDD_SERVER_SOURCES})

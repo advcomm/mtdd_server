@@ -4,6 +4,10 @@
 #include <stdexcept>
 #include <thread>
 
+#ifndef _WIN32
+#include "unix/unix_socket.h"
+#endif
+
 namespace mtdd {
 namespace {
 
@@ -31,6 +35,18 @@ int ParseNonNegativeInt(const char* name, const char* value, int default_value) 
   return static_cast<int>(parsed);
 }
 
+int ParseOctalMode(const char* name, const char* value, int default_value) {
+  if (value == nullptr || *value == '\0') {
+    return default_value;
+  }
+  char* end = nullptr;
+  long parsed = std::strtol(value, &end, 8);
+  if (end == value || *end != '\0' || parsed < 0 || parsed > 0777) {
+    throw std::runtime_error(std::string(name) + " must be a unix socket mode (octal, e.g. 660)");
+  }
+  return static_cast<int>(parsed);
+}
+
 std::optional<int32_t> ParseOptionalHostIndex(const char* value) {
   if (value == nullptr || *value == '\0') {
     return std::nullopt;
@@ -43,17 +59,45 @@ std::optional<int32_t> ParseOptionalHostIndex(const char* value) {
   return static_cast<int32_t>(parsed);
 }
 
-void ParseListen(const char* value, std::string& address, int& port) {
+std::string NormalizeUnixPath(std::string path) {
+  if (path.empty()) {
+    throw std::runtime_error("MTDD_LISTEN unix path must not be empty");
+  }
+  while (path.size() >= 2 && path[0] == '/' && path[1] == '/') {
+    path.erase(0, 1);
+  }
+  if (path[0] != '/') {
+    throw std::runtime_error("MTDD_LISTEN unix path must be absolute");
+  }
+  return path;
+}
+
+void ParseListen(const char* value, ServerConfig& config) {
   if (value == nullptr || *value == '\0') {
+#ifdef _WIN32
+    config.listen_mode = ListenMode::Tcp;
+#else
+    config.listen_mode = ListenMode::Unix;
+    config.unix_socket_path = "/run/mtdd/grpc.sock";
+#endif
     return;
   }
+
   const std::string listen(value);
+  if (listen.rfind("unix:", 0) == 0) {
+    config.listen_mode = ListenMode::Unix;
+    config.unix_socket_path = NormalizeUnixPath(listen.substr(5));
+    return;
+  }
+
   const auto colon = listen.rfind(':');
   if (colon == std::string::npos) {
-    throw std::runtime_error("MTDD_LISTEN must be host:port");
+    throw std::runtime_error("MTDD_LISTEN must be unix:/path or host:port");
   }
-  address = listen.substr(0, colon);
-  port = ParsePositiveInt("MTDD_LISTEN port", listen.substr(colon + 1).c_str(), port);
+
+  config.listen_mode = ListenMode::Tcp;
+  config.listen_address = listen.substr(0, colon);
+  config.listen_port = ParsePositiveInt("MTDD_LISTEN port", listen.substr(colon + 1).c_str(), config.listen_port);
 }
 
 bool ParseBoolEnv(const char* value, bool default_value) {
@@ -78,6 +122,25 @@ bool IsProductionEnv(const char* value) {
   return v == "production" || v == "prod";
 }
 
+void RejectServerTlsEnv() {
+  static const char* kTlsVars[] = {
+      "MTDD_GRPC_TLS",
+      "MTDD_GRPC_TLS_CERT_FILE",
+      "MTDD_GRPC_TLS_KEY_FILE",
+      "MTDD_GRPC_TLS_CLIENT_CA_FILE",
+  };
+
+  for (const char* name : kTlsVars) {
+    const char* value = std::getenv(name);
+    if (value != nullptr && *value != '\0') {
+      throw std::runtime_error(
+          std::string(name) +
+          " is not supported: mtdd_server uses plain gRPC over a unix domain socket; "
+          "terminate TLS and compression at nginx");
+    }
+  }
+}
+
 void ValidateProductionConfig(const ServerConfig& config) {
   if (!config.production_mode) {
     return;
@@ -87,6 +150,18 @@ void ValidateProductionConfig(const ServerConfig& config) {
     throw std::runtime_error("MTDD_HOST_INDEX is required when MTDD_ENV=production");
   }
 
+#ifndef _WIN32
+  if (config.listen_mode != ListenMode::Unix) {
+    const char* allow = std::getenv("MTDD_ALLOW_TCP_LISTEN");
+    if (!ParseBoolEnv(allow, false)) {
+      throw std::runtime_error(
+          "MTDD_LISTEN must be a unix: path in production (set MTDD_ALLOW_TCP_LISTEN=1 for dev-only TCP)");
+    }
+  }
+#else
+  if (config.listen_mode != ListenMode::Tcp) {
+    throw std::runtime_error("unix domain sockets are not supported on Windows; use host:port for MTDD_LISTEN");
+  }
   if (!IsLoopbackAddress(config.listen_address)) {
     const char* allow = std::getenv("MTDD_ALLOW_PUBLIC_BIND");
     if (!ParseBoolEnv(allow, false)) {
@@ -94,28 +169,7 @@ void ValidateProductionConfig(const ServerConfig& config) {
           "MTDD_LISTEN must bind to loopback in production (set MTDD_ALLOW_PUBLIC_BIND=1 to override)");
     }
   }
-}
-
-void LoadGrpcTlsConfig(GrpcTlsConfig& tls) {
-  tls.enabled = ParseBoolEnv(std::getenv("MTDD_GRPC_TLS"), false);
-
-  if (const char* cert = std::getenv("MTDD_GRPC_TLS_CERT_FILE"); cert != nullptr) {
-    tls.cert_file = cert;
-  }
-  if (const char* key = std::getenv("MTDD_GRPC_TLS_KEY_FILE"); key != nullptr) {
-    tls.key_file = key;
-  }
-  if (const char* client_ca = std::getenv("MTDD_GRPC_TLS_CLIENT_CA_FILE"); client_ca != nullptr) {
-    tls.client_ca_file = client_ca;
-  }
-
-  if (tls.enabled || !tls.cert_file.empty() || !tls.key_file.empty()) {
-    tls.enabled = true;
-    if (tls.cert_file.empty() || tls.key_file.empty()) {
-      throw std::runtime_error(
-          "MTDD_GRPC_TLS_CERT_FILE and MTDD_GRPC_TLS_KEY_FILE are required when MTDD_GRPC_TLS is enabled");
-    }
-  }
+#endif
 }
 
 }  // namespace
@@ -124,9 +178,25 @@ bool IsLoopbackAddress(const std::string& address) {
   return address == "127.0.0.1" || address == "::1" || address == "localhost";
 }
 
+std::string FormatListenTarget(const ServerConfig& config) {
+  if (config.listen_mode == ListenMode::Unix) {
+    return "unix:" + config.unix_socket_path;
+  }
+  return config.listen_address + ":" + std::to_string(config.listen_port);
+}
+
+std::string FormatListenLogLabel(const ServerConfig& config) {
+  if (config.listen_mode == ListenMode::Unix) {
+    return "unix:" + config.unix_socket_path;
+  }
+  return config.listen_address + ":" + std::to_string(config.listen_port);
+}
+
 ServerConfig LoadConfigFromEnv() {
+  RejectServerTlsEnv();
+
   ServerConfig config;
-  ParseListen(std::getenv("MTDD_LISTEN"), config.listen_address, config.listen_port);
+  ParseListen(std::getenv("MTDD_LISTEN"), config);
 
   if (const char* pg_host = std::getenv("MTDD_PG_HOST"); pg_host != nullptr && *pg_host != '\0') {
     config.pg_host = pg_host;
@@ -159,7 +229,18 @@ ServerConfig LoadConfigFromEnv() {
   config.health_probe_interval_sec = ParsePositiveInt(
       "MTDD_HEALTH_PROBE_INTERVAL_SEC", std::getenv("MTDD_HEALTH_PROBE_INTERVAL_SEC"), config.health_probe_interval_sec);
   config.health_require_pg = ParseBoolEnv(std::getenv("MTDD_HEALTH_REQUIRE_PG"), true);
-  LoadGrpcTlsConfig(config.grpc_tls);
+  config.unix_socket_mode =
+      ParseOctalMode("MTDD_UNIX_SOCKET_MODE", std::getenv("MTDD_UNIX_SOCKET_MODE"), config.unix_socket_mode);
+  config.unix_socket_dir_mode =
+      ParseOctalMode("MTDD_UNIX_SOCKET_DIR_MODE", std::getenv("MTDD_UNIX_SOCKET_DIR_MODE"), config.unix_socket_dir_mode);
+  config.unix_socket_create_dir =
+      ParseBoolEnv(std::getenv("MTDD_UNIX_SOCKET_CREATE_DIR"), config.unix_socket_create_dir);
+
+#ifndef _WIN32
+  if (config.listen_mode == ListenMode::Unix) {
+    unix_socket::ValidateUnixSocketPath(config.unix_socket_path);
+  }
+#endif
 
   ValidateProductionConfig(config);
   return config;

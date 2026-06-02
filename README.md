@@ -39,8 +39,8 @@ Binary: `build/mtdd_server`
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MTDD_LISTEN` | `127.0.0.1:50051` | gRPC bind address |
-| `MTDD_ENV` | _(unset)_ | Set to `production` to enforce host index and loopback bind |
+| `MTDD_LISTEN` | `unix:/run/mtdd/grpc.sock` (Linux) | Unix socket path (`unix:/path`) or dev-only `host:port` |
+| `MTDD_ENV` | _(unset)_ | Set to `production` to enforce host index and unix socket listen |
 | `MTDD_HOST_INDEX` | _(unset)_ | Required when `MTDD_ENV=production`; must match client `Connect.host_index` |
 | `MTDD_PG_HOST` | `127.0.0.1` | libpq host (local Postgres) |
 | `MTDD_POOL_SIZE` | `8` | Pool size for non-session queries |
@@ -56,21 +56,20 @@ Binary: `build/mtdd_server`
 | `MTDD_MAX_NOTIFY_CHANNEL_BYTES` | `63` | Max channel name length |
 | `MTDD_HEALTH_PROBE_INTERVAL_SEC` | `30` | Periodic PostgreSQL probe after first Connect |
 | `MTDD_HEALTH_REQUIRE_PG` | `1` | Set `0` on notify-only coordinator nodes |
-| `MTDD_ALLOW_PUBLIC_BIND` | `0` | Allow non-loopback bind in production |
-| `MTDD_GRPC_TLS` | `0` | Enable native gRPC TLS on the server listener |
-| `MTDD_GRPC_TLS_CERT_FILE` | _(unset)_ | Server certificate PEM path |
-| `MTDD_GRPC_TLS_KEY_FILE` | _(unset)_ | Server private key PEM path |
-| `MTDD_GRPC_TLS_CLIENT_CA_FILE` | _(unset)_ | Optional client CA for mTLS |
+| `MTDD_UNIX_SOCKET_MODE` | `660` | Octal permissions on the unix socket after bind |
+| `MTDD_UNIX_SOCKET_DIR_MODE` | `750` | Octal permissions when creating the socket directory |
+| `MTDD_UNIX_SOCKET_CREATE_DIR` | `0` | Create the socket parent directory if missing |
+| `MTDD_ALLOW_TCP_LISTEN` | `0` | Allow `host:port` listen in production (dev only) |
 
 Database credentials are supplied by the client in `Connect` (from app `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`).
 
-Pair server TLS with client [f37b2d9+ TLS env vars](https://github.com/advcomm/mtdd/commit/f37b2d95e93ba444e69e2cf2e62ec30047debf28) (`MTDD_GRPC_TLS_CA_FILE`, optional client cert). See [docs/OPERATIONS.md](docs/OPERATIONS.md).
+**TLS and compression** are handled by nginx in front of this process. `mtdd_server` uses plain gRPC over a unix domain socket only — do not set `MTDD_GRPC_TLS*`. Clients verify nginx with [f37b2d9+ TLS env vars](https://github.com/advcomm/mtdd/commit/f37b2d95e93ba444e69e2cf2e62ec30047debf28). See [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ### Production example
 
 ```bash
 export MTDD_ENV=production
-export MTDD_LISTEN=127.0.0.1:50051
+export MTDD_LISTEN=unix:/run/mtdd/grpc.sock
 export MTDD_HOST_INDEX=0
 export MTDD_PG_HOST=127.0.0.1
 export MTDD_NOTIFY_ENABLED=1
@@ -120,14 +119,14 @@ After a notify `Watch` stream drops, the client reconnects and re-issues `Subscr
 ## Deployment
 
 1. Run PostgreSQL on localhost on each shard VM.
-2. Run `mtdd_server` bound to loopback (`MTDD_LISTEN=127.0.0.1:50051`, `MTDD_ENV=production`).
-3. Configure nginx HTTP/2 gRPC proxy on the host IP — see [deploy/nginx/mtdd-grpc.conf](deploy/nginx/mtdd-grpc.conf).
+2. Run `mtdd_server` on a unix domain socket (`MTDD_LISTEN=unix:/run/mtdd/grpc.sock`, `MTDD_ENV=production`).
+3. Configure nginx HTTP/2 gRPC proxy on the host IP, proxying to the unix socket — see [deploy/nginx/mtdd-grpc.conf](deploy/nginx/mtdd-grpc.conf) or [deploy/nginx/mtdd-grpc-tls.conf](deploy/nginx/mtdd-grpc-tls.conf) for TLS.
 4. Set `MTDD_HOST_INDEX` to the shard’s index in `DB_HOST` — see [deploy/systemd/mtdd-server.service](deploy/systemd/mtdd-server.service).
 
 ```mermaid
 flowchart LR
-  App[Node app + mtdd] -->|gRPC :50051| Nginx[nginx on shard IP]
-  Nginx -->|grpc_pass| Server[mtdd_server loopback]
+  App[Node app + mtdd] -->|gRPC TLS :443| Nginx[nginx on shard IP]
+  Nginx -->|unix socket| Server[mtdd_server plain gRPC]
   Server -->|libpq| PG[(PostgreSQL)]
   App -->|MTDD_NOTIFY_URL| NotifyCoord[notify coordinator]
 ```
@@ -142,7 +141,7 @@ gRPC health starts `NOT_SERVING` until the first successful `Connect` probes Pos
 
 ```bash
 ./scripts/sync-proto.sh
-# MTDD_PROTO_REF=f37b2d95e93ba444e69e2cf2e62ec30047debf28  (default)
+# MTDD_PROTO_REF=9a9ae4f  (default)
 ```
 
 CI runs this on every PR.

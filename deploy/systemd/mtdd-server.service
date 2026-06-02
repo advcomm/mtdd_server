@@ -7,9 +7,12 @@ Wants=postgresql.service
 Type=simple
 User=mtdd
 Group=mtdd
+RuntimeDirectory=mtdd
+RuntimeDirectoryMode=0750
 EnvironmentFile=-/etc/mtdd/mtdd-server.env
 Environment=MTDD_ENV=production
-Environment=MTDD_LISTEN=127.0.0.1:50051
+Environment=MTDD_LISTEN=unix:/run/mtdd/grpc.sock
+Environment=MTDD_UNIX_SOCKET_MODE=0660
 Environment=MTDD_HOST_INDEX=0
 Environment=MTDD_PG_HOST=127.0.0.1
 Environment=MTDD_NOTIFY_ENABLED=1
@@ -26,3 +29,6 @@ ReadWritePaths=/var/log/mtdd
 
 [Install]
 WantedBy=multi-user.target
+
+# Add the nginx user to the mtdd group so nginx can connect to the unix socket:
+#   usermod -aG mtdd www-data

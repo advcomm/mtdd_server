@@ -8,17 +8,24 @@
 #include <string>
 
 #include "config.h"
-#include "grpc/server_credentials.h"
 #include "health/pg_health_monitor.h"
 #include "logging.h"
 #include "notify/registry.h"
 #include "service/mtdd_notify_service.h"
 #include "service/mtdd_shard_service.h"
 
+#ifndef _WIN32
+#include "unix/unix_socket.h"
+#endif
+
 namespace {
 
 std::unique_ptr<grpc::Server> g_server;
 mtdd::health::PgHealthMonitor* g_health_monitor = nullptr;
+
+#ifndef _WIN32
+std::optional<mtdd::unix_socket::ScopedListen> g_unix_listen;
+#endif
 
 void HandleSignal(int /*signum*/) {
   if (g_health_monitor != nullptr) {
@@ -34,12 +41,20 @@ void HandleSignal(int /*signum*/) {
 int main() {
   try {
     const mtdd::ServerConfig config = mtdd::LoadConfigFromEnv();
-    mtdd::log::Info("starting", config.listen_address + ":" + std::to_string(config.listen_port));
+    const std::string listen_target = mtdd::FormatListenTarget(config);
+    mtdd::log::Info("starting", mtdd::FormatListenLogLabel(config));
 
     grpc::EnableDefaultHealthCheckService(true);
     if (config.grpc_reflection) {
       grpc::reflection::InitProtoReflectionServerBuilderPlugin();
     }
+
+#ifndef _WIN32
+    if (config.listen_mode == mtdd::ListenMode::Unix) {
+      g_unix_listen.emplace(config);
+      g_unix_listen->Prepare();
+    }
+#endif
 
     mtdd::notify::NotifyRegistry notify_registry;
     mtdd::health::PgHealthMonitor health_monitor(config.health_probe_interval_sec);
@@ -51,9 +66,8 @@ int main() {
       notify_service.emplace(notify_registry, config);
     }
 
-    const std::string listen_target = config.listen_address + ":" + std::to_string(config.listen_port);
     grpc::ServerBuilder builder;
-    builder.AddListeningPort(listen_target, mtdd::grpc_util::BuildServerCredentials(config.grpc_tls));
+    builder.AddListeningPort(listen_target, grpc::InsecureServerCredentials());
     builder.RegisterService(&shard_service);
     if (notify_service.has_value()) {
       builder.RegisterService(&notify_service.value());
@@ -64,9 +78,24 @@ int main() {
 
     g_server = builder.BuildAndStart();
     if (!g_server) {
-      mtdd::log::Error("startup_failed", "BuildAndStart returned null");
+#ifndef _WIN32
+      if (g_unix_listen.has_value()) {
+        g_unix_listen->Abort();
+        g_unix_listen.reset();
+      }
+#endif
+      mtdd::log::Error(
+          "startup_failed",
+          "BuildAndStart returned null; check unix socket permissions and whether another process holds " +
+              mtdd::FormatListenLogLabel(config));
       return 1;
     }
+
+#ifndef _WIN32
+    if (g_unix_listen.has_value()) {
+      g_unix_listen->Finalize();
+    }
+#endif
 
     health_monitor.AttachServer(g_server.get());
     if (!config.health_require_pg) {
@@ -76,13 +105,23 @@ int main() {
     std::signal(SIGINT, HandleSignal);
     std::signal(SIGTERM, HandleSignal);
 
-    mtdd::log::Info("listening", listen_target + (config.grpc_tls.enabled ? " tls=1" : " tls=0"));
+    mtdd::log::Info("listening", mtdd::FormatListenLogLabel(config) + " (plain gRPC; TLS at nginx)");
     g_server->Wait();
 
     health_monitor.Stop();
+#ifndef _WIN32
+    g_unix_listen.reset();
+#endif
+    g_server.reset();
     mtdd::log::Info("shutdown", "");
     return 0;
   } catch (const std::exception& ex) {
+#ifndef _WIN32
+    if (g_unix_listen.has_value()) {
+      g_unix_listen->Abort();
+      g_unix_listen.reset();
+    }
+#endif
     mtdd::log::Error("fatal", ex.what());
     return 1;
   }
