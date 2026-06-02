@@ -137,11 +137,11 @@ gRPC health starts `NOT_SERVING` until the first successful `Connect` probes Pos
 
 ## Proto sync
 
-[proto/mtdd.proto](proto/mtdd.proto) is the **source of truth**. The client copies from this repo via its `scripts/sync-proto.sh`. Verify alignment with a client release:
+[proto/mtdd.proto](proto/mtdd.proto) is the **source of truth**. The client copies from this repo via its `scripts/sync-proto.sh`. Verify alignment with the RPGB streaming client release:
 
 ```bash
 ./scripts/sync-proto.sh
-# MTDD_PROTO_REF=78961bee2d157e251cbae5867cf070cda9364919  (default)
+# MTDD_PROTO_REF=bced8d7e768b0c6b6953125f3803507ecc491e2f  (default)
 ```
 
 CI runs this on every PR.

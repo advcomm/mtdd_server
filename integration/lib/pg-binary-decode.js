@@ -209,9 +209,28 @@ function decodeRawPgBatch(payload, fields) {
   return rows
 }
 
+/** Match libpq binary column format for common OIDs (mock/tests). */
+function mockWireFormat(dataTypeOid, pgFormat) {
+  if (pgFormat != null && pgFormat !== 0) {
+    return pgFormat
+  }
+  switch (dataTypeOid) {
+    case OID_BOOL:
+    case OID_INT2:
+    case OID_INT4:
+    case OID_INT8:
+    case OID_FLOAT4:
+    case OID_FLOAT8:
+      return 1
+    default:
+      return 0
+  }
+}
+
 module.exports = {
   RAW_PG_BATCH_MAGIC,
   RAW_PG_BATCH_VERSION,
   decodeRawPgBatch,
   decodePgCell,
+  mockWireFormat,
 }

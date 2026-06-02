@@ -1,7 +1,7 @@
 'use strict'
 
 const resultMeta = require('../flatbuffers/result-meta-codec')
-const { decodeRawPgBatch } = require('./pg-binary-decode')
+const { decodeRawPgBatch, mockWireFormat } = require('./pg-binary-decode')
 
 const CHUNK_KIND_SCHEMA = 'CHUNK_KIND_SCHEMA'
 const CHUNK_KIND_BATCH = 'CHUNK_KIND_BATCH'
@@ -42,7 +42,7 @@ function pgFieldsFromSchema(schema) {
     dataTypeID: field.data_type_oid,
     tableID: field.table_oid,
     columnID: field.column_id,
-    format: field.format,
+    format: mockWireFormat(field.data_type_oid ?? 0, field.format),
   }))
 }
 

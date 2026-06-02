@@ -1,6 +1,6 @@
 # MTDD server operations
 
-Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md) (client commit [78961be](https://github.com/advcomm/mtdd/commit/78961bee2d157e251cbae5867cf070cda9364919) — TypeScript under `src/`, built to `dist/`).
+Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md) (client commit [bced8d7](https://github.com/advcomm/mtdd/commit/bced8d7e768b0c6b6953125f3803507ecc491e2f) — RPGB streaming; TypeScript under `src/`, built to `dist/`).
 
 ## Plain SQL only
 
@@ -113,7 +113,7 @@ This repo is the **source of truth** for [proto/mtdd.proto](../proto/mtdd.proto)
 MTDD_PROTO_REF=main ./scripts/sync-proto.sh
 ```
 
-Default upstream ref: `78961bee2d157e251cbae5867cf070cda9364919` ([@advcomm/mtdd](https://github.com/advcomm/mtdd) TypeScript migration).
+Default upstream ref: `bced8d7e768b0c6b6953125f3803507ecc491e2f` ([@advcomm/mtdd](https://github.com/advcomm/mtdd) RPGB streaming / `ResultChunk.payload`).
 
 ## Integration tests
 
