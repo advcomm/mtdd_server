@@ -63,11 +63,13 @@ set(MTDD_SERVER_SOURCES
   src/config.cpp
   src/unix/unix_socket.cpp
   src/codec/flex_meta.cpp
-  src/codec/arrow_ipc_encoder.cpp
+  src/codec/query_meta.cpp
+  src/codec/raw_batch_encoder.cpp
   src/pg/pq_conn.cpp
   src/pg/connection_manager.cpp
   src/pg/session_store.cpp
   src/pg/query_executor.cpp
+  src/pg/streaming_query.cpp
   src/service/mtdd_shard_service.cpp
   src/notify/channel_key.cpp
   src/notify/registry.cpp
@@ -80,15 +82,6 @@ target_include_directories(mtdd_server PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${PROTO_OUT_DIR}"
 )
-if(TARGET Arrow::arrow_shared)
-  set(MTDD_ARROW_LIB Arrow::arrow_shared)
-elseif(TARGET Arrow::arrow_static)
-  set(MTDD_ARROW_LIB Arrow::arrow_static)
-elseif(TARGET Arrow::arrow)
-  set(MTDD_ARROW_LIB Arrow::arrow)
-else()
-  message(FATAL_ERROR "Arrow library target not found")
-endif()
 
 if(TARGET PostgreSQL::PostgreSQL)
   set(MTDD_LIBPQ_LIB PostgreSQL::PostgreSQL)
@@ -101,7 +94,6 @@ endif()
 target_link_libraries(mtdd_server PRIVATE
   mtdd_proto
   ${MTDD_LIBPQ_LIB}
-  ${MTDD_ARROW_LIB}
   flatbuffers::flatbuffers
 )
 

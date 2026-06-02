@@ -37,16 +37,6 @@ endif()
 
 find_package(PostgreSQL REQUIRED)
 
-find_package(Arrow CONFIG QUIET)
-if(NOT Arrow_FOUND)
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(ARROW REQUIRED arrow)
-  add_library(Arrow::arrow INTERFACE IMPORTED)
-  target_include_directories(Arrow::arrow INTERFACE ${ARROW_INCLUDE_DIRS})
-  target_link_libraries(Arrow::arrow INTERFACE ${ARROW_LIBRARIES})
-  target_link_directories(Arrow::arrow INTERFACE ${ARROW_LIBRARY_DIRS})
-endif()
-
 find_package(flatbuffers CONFIG QUIET)
 if(NOT TARGET flatbuffers::flatbuffers)
   find_path(FLATBUFFERS_INCLUDE_DIR NAMES flatbuffers/flexbuffers.h)

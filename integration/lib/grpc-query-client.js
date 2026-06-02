@@ -1,15 +1,12 @@
 'use strict'
 
 const resultMeta = require('../flatbuffers/result-meta-codec')
+const { decodeRawPgBatch } = require('./pg-binary-decode')
 
 const CHUNK_KIND_SCHEMA = 'CHUNK_KIND_SCHEMA'
 const CHUNK_KIND_BATCH = 'CHUNK_KIND_BATCH'
 const CHUNK_KIND_TRAILER = 'CHUNK_KIND_TRAILER'
 const CHUNK_KIND_ERROR = 'CHUNK_KIND_ERROR'
-
-function loadArrow() {
-  return require('apache-arrow')
-}
 
 function encodeQueryParam(value, oid) {
   if (value === null || value === undefined) {
@@ -34,13 +31,13 @@ function buildQueryRequestPayload(hostIndex, req, sessionId) {
     name: req.name ?? '',
     row_mode: req.row_mode ?? '',
     session_id: sessionId ?? '',
-    result_format: 0,
+    result_format: 1,
     params: buildLibpqQueryParams(req),
   }
 }
 
 function pgFieldsFromSchema(schema) {
-  return (schema.fields ?? []).map((field) => ({
+  return (schema?.fields ?? []).map((field) => ({
     name: field.name,
     dataTypeID: field.data_type_oid,
     tableID: field.table_oid,
@@ -55,36 +52,10 @@ function commandFromTag(commandTag, fallback) {
   return token ? token.toUpperCase() : fallback ?? 'SELECT'
 }
 
-function arrowValueToJs(value) {
-  if (value === null || value === undefined) return null
-  if (typeof value === 'bigint') return value.toString()
-  if (value instanceof Date) return value
-  if (typeof value === 'object' && value !== null && typeof value.toJSON === 'function') {
-    return value.toJSON()
-  }
-  return value
-}
-
-function arrowTableToRows(table, fieldNames) {
-  const names =
-    fieldNames.length > 0 ? fieldNames : table.schema.fields.map((f) => f.name)
-  const rows = []
-  const rowCount = table.numRows ?? 0
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-    const row = {}
-    for (const name of names) {
-      const column = table.getChild(name)
-      row[name] = column ? arrowValueToJs(column.get(rowIndex)) : null
-    }
-    rows.push(row)
-  }
-  return rows
-}
-
-function decodeArrowStreamToPgResult(chunks) {
+function decodeQueryStreamToPgResult(chunks) {
   let schema = null
-  const ipcParts = []
   let trailer = null
+  const rows = []
 
   for (const chunk of chunks) {
     const kind = chunk.kind ?? chunk.Kind
@@ -101,29 +72,31 @@ function decodeArrowStreamToPgResult(chunks) {
       if (meta && meta.length > 0) {
         schema = resultMeta.decodeResultSchema(meta)
       }
-      const ipc = chunk.arrow_ipc ?? chunk.arrowIpc
-      if (ipc && ipc.length > 0) ipcParts.push(Buffer.from(ipc))
+      const payload = chunk.payload ?? chunk.Payload
+      if (schema && payload && payload.length > 0) {
+        rows.push(...decodeRawPgBatch(Buffer.from(payload), schema.fields))
+      }
       continue
     }
     if (kind === CHUNK_KIND_BATCH || kind === 2) {
-      const ipc = chunk.arrow_ipc ?? chunk.arrowIpc
-      if (ipc && ipc.length > 0) ipcParts.push(Buffer.from(ipc))
+      const payload = chunk.payload ?? chunk.Payload
+      if (!schema) {
+        throw new Error('BATCH chunk before SCHEMA')
+      }
+      if (payload && payload.length > 0) {
+        rows.push(...decodeRawPgBatch(Buffer.from(payload), schema.fields))
+      }
       continue
     }
     if (kind === CHUNK_KIND_TRAILER || kind === 3) {
       const meta = chunk.flatbuffer_meta ?? chunk.flatbufferMeta
-      if (meta && meta.length > 0) trailer = resultMeta.decodeResultTrailer(meta)
+      if (meta && meta.length > 0) {
+        trailer = resultMeta.decodeResultTrailer(meta)
+      }
     }
   }
 
-  const fieldNames = (schema?.fields ?? []).map((f) => f.name)
   const fields = pgFieldsFromSchema(schema ?? { fields: [] })
-  let rows = []
-  if (ipcParts.length > 0) {
-    const arrow = loadArrow()
-    const table = arrow.tableFromIPC(Buffer.concat(ipcParts))
-    rows = arrowTableToRows(table, fieldNames)
-  }
 
   return {
     command: commandFromTag(trailer?.command_tag, schema?.command),
@@ -136,5 +109,5 @@ function decodeArrowStreamToPgResult(chunks) {
 
 module.exports = {
   buildQueryRequestPayload,
-  decodeArrowStreamToPgResult,
+  decodeQueryStreamToPgResult,
 }

@@ -2,7 +2,7 @@
 
 const grpc = require('@grpc/grpc-js')
 const protoLoader = require('@grpc/proto-loader')
-const { buildQueryRequestPayload, decodeArrowStreamToPgResult } = require('./lib/grpc-arrow-client')
+const { buildQueryRequestPayload, decodeQueryStreamToPgResult } = require('./lib/grpc-query-client')
 const { assertProtoExists } = require('./lib/proto-path')
 
 const SERVER = process.env.MTDD_SERVER_ADDR || '127.0.0.1:50051'
@@ -46,7 +46,7 @@ function queryStream(client, request, deadlineMs = 30000) {
     call.on('error', reject)
     call.on('end', () => {
       try {
-        resolve(decodeArrowStreamToPgResult(chunks))
+        resolve(decodeQueryStreamToPgResult(chunks))
       } catch (err) {
         reject(err)
       }
@@ -59,7 +59,6 @@ function sleep(ms) {
 }
 
 async function main() {
-  process.env.MTDD_GRPC_RESULT_FORMAT = 'arrow'
   const { client } = loadClient()
 
   await sleep(2000)

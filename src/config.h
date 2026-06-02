@@ -22,7 +22,8 @@ struct ServerConfig {
   std::optional<int32_t> host_index;
   std::string pg_host = "127.0.0.1";
   int pool_size = 8;
-  int arrow_batch_rows = 10000;
+  int pg_fetch_rows = 10000;
+  int pg_wire_batch_rows = 1000;
   int pg_connect_timeout_sec = 5;
   int max_sessions = 512;
   int grpc_max_threads = 0;  // 0 = auto (hardware concurrency)

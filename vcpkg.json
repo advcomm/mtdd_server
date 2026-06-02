@@ -5,7 +5,6 @@
     "grpc",
     "protobuf",
     "libpq",
-    "arrow",
     "flatbuffers",
     "gtest"
   ]

@@ -1,8 +1,10 @@
 #include "service/mtdd_shard_service.h"
 
-#include "codec/arrow_ipc_encoder.h"
 #include "codec/flex_meta.h"
+#include "codec/query_meta.h"
+#include "codec/raw_batch_encoder.h"
 #include "logging.h"
+#include "pg/streaming_query.h"
 
 namespace mtdd::service {
 namespace {
@@ -12,6 +14,48 @@ std::string ResolveDbName(const mtdd::ConnectRequest& request) {
     return request.dbname();
   }
   return request.database();
+}
+
+bool WriteResultChunk(
+    grpc::ServerWriter<mtdd::ResultChunk>* writer,
+    mtdd::ChunkKind kind,
+    const std::string& flatbuffer_meta,
+    const std::string& payload) {
+  if (payload.empty() && flatbuffer_meta.empty()) {
+    return true;
+  }
+
+  mtdd::ResultChunk chunk;
+  chunk.set_kind(kind);
+  if (!flatbuffer_meta.empty()) {
+    chunk.set_flatbuffer_meta(flatbuffer_meta);
+  }
+  if (!payload.empty()) {
+    chunk.set_payload(payload);
+  }
+  return writer->Write(chunk);
+}
+
+bool SendBatchChunk(
+    grpc::ServerContext* context,
+    grpc::ServerWriter<mtdd::ResultChunk>* writer,
+    const codec::ResultSchema& schema_meta,
+    bool* batch_sent,
+    const std::string& payload) {
+  if (payload.empty()) {
+    return true;
+  }
+  if (context->IsCancelled()) {
+    return false;
+  }
+
+  const mtdd::ChunkKind kind = *batch_sent ? mtdd::CHUNK_KIND_BATCH : mtdd::CHUNK_KIND_SCHEMA;
+  const std::string meta = *batch_sent ? std::string() : codec::EncodeResultSchema(schema_meta);
+  if (!WriteResultChunk(writer, kind, meta, payload)) {
+    return false;
+  }
+  *batch_sent = true;
+  return true;
 }
 
 }  // namespace
@@ -51,10 +95,16 @@ bool MtddShardServiceImpl::ValidateHostIndex(int32_t host_index, std::string* me
   return true;
 }
 
-bool MtddShardServiceImpl::EnsureArrowFormat(const mtdd::QueryRequest& request, std::string* message) const {
+bool MtddShardServiceImpl::EnsureQueryRequest(const mtdd::QueryRequest& request, std::string* message) const {
   if (!request.name().empty()) {
     if (message != nullptr) {
       *message = "prepared statements are not supported";
+    }
+    return false;
+  }
+  if (request.result_format() != 1) {
+    if (message != nullptr) {
+      *message = "result_format must be 1 (libpq binary)";
     }
     return false;
   }
@@ -133,7 +183,7 @@ grpc::Status MtddShardServiceImpl::QueryStream(
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, message);
   }
 
-  if (!EnsureArrowFormat(*request, &message)) {
+  if (!EnsureQueryRequest(*request, &message)) {
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, message);
   }
 
@@ -141,87 +191,157 @@ grpc::Status MtddShardServiceImpl::QueryStream(
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "query text exceeds MTDD_MAX_QUERY_TEXT_BYTES");
   }
 
-  std::unique_ptr<pg::QueryExecutor> executor_copy;
+  pg::ConnectionManager* pool = nullptr;
+  pg::SessionStore* sessions = nullptr;
+  pg::ConnectParams connect_params;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (!executor_ || !connect_params_.has_value()) {
       return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "Connect must be called first");
     }
-    executor_copy = std::make_unique<pg::QueryExecutor>(&pool_, &sessions_, *connect_params_);
+    pool = &pool_;
+    sessions = &sessions_;
+    connect_params = connect_params_.value();
   }
 
+  const int fetch_rows = config_.pg_fetch_rows > 0 ? config_.pg_fetch_rows : 10000;
+  const int wire_batch_rows = config_.pg_wire_batch_rows > 0 ? config_.pg_wire_batch_rows : 1000;
+
+  pg::StreamingQuery stream(pool, sessions, connect_params, fetch_rows);
   std::string exec_error;
-  auto execution = executor_copy->Execute(*request, &exec_error);
-  if (!exec_error.empty()) {
+  if (!stream.Open(*request, &exec_error)) {
     pg::PgErrorMeta meta;
     meta.message = exec_error;
     WriteErrorChunk(writer, meta);
     return grpc::Status::OK;
   }
 
-  PGresult* result = execution.result;
-  if (result == nullptr) {
-    executor_copy->FinishQuery(execution);
-    pg::PgErrorMeta meta;
-    meta.message = "query returned null";
-    WriteErrorChunk(writer, meta);
-    return grpc::Status::OK;
-  }
-
-  const ExecStatusType status = PQresultStatus(result);
-  if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
-    WriteErrorChunk(writer, pg::QueryExecutor::ExtractPgError(result));
-    executor_copy->FinishQuery(execution);
-    return grpc::Status::OK;
-  }
-
-  if (context->IsCancelled()) {
-    executor_copy->FinishQuery(execution);
-    return grpc::Status(grpc::StatusCode::CANCELLED, "cancelled");
-  }
+  codec::ResultSchema schema_meta;
+  bool schema_open = false;
+  bool batch_sent = false;
+  int64_t total_rows = 0;
+  PGresult* last_result = nullptr;
 
   try {
-    auto encoded = codec::EncodePgResult(result, config_.arrow_batch_rows);
-    executor_copy->FinishQuery(execution);
-
-    if (!encoded.ipc_batches.empty()) {
-      mtdd::ResultChunk schema_chunk;
-      schema_chunk.set_kind(mtdd::CHUNK_KIND_SCHEMA);
-      schema_chunk.set_flatbuffer_meta(codec::EncodeResultSchema(encoded.schema));
-      schema_chunk.set_arrow_ipc(encoded.ipc_batches.front());
-      if (!writer->Write(schema_chunk)) {
-        return grpc::Status(grpc::StatusCode::CANCELLED, "client cancelled stream");
+    while (true) {
+      if (context->IsCancelled()) {
+        stream.Abort();
+        return grpc::Status(grpc::StatusCode::CANCELLED, "cancelled");
       }
 
-      for (size_t i = 1; i < encoded.ipc_batches.size(); ++i) {
-        mtdd::ResultChunk batch_chunk;
-        batch_chunk.set_kind(mtdd::CHUNK_KIND_BATCH);
-        batch_chunk.set_arrow_ipc(encoded.ipc_batches[i]);
-        if (!writer->Write(batch_chunk)) {
+      PGresult* fetch = stream.Fetch(&exec_error);
+      if (fetch == nullptr) {
+        if (!exec_error.empty()) {
+          pg::PgErrorMeta meta;
+          meta.message = exec_error;
+          WriteErrorChunk(writer, meta);
+          stream.Abort();
+          return grpc::Status::OK;
+        }
+        break;
+      }
+
+      if (last_result != nullptr) {
+        PQclear(last_result);
+      }
+      last_result = fetch;
+
+      const ExecStatusType status = PQresultStatus(fetch);
+      if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
+        WriteErrorChunk(writer, pg::QueryExecutor::ExtractPgError(fetch));
+        stream.Abort();
+        return grpc::Status::OK;
+      }
+
+      const int num_fields = PQnfields(fetch);
+      const int num_rows = PQntuples(fetch);
+
+      if (num_fields == 0) {
+        const auto trailer = codec::BuildCommandTrailer(fetch);
+        if (!WriteResultChunk(
+                writer,
+                mtdd::CHUNK_KIND_TRAILER,
+                codec::EncodeResultTrailer(trailer),
+                {})) {
+          stream.Abort();
           return grpc::Status(grpc::StatusCode::CANCELLED, "client cancelled stream");
         }
+        PQclear(last_result);
+        last_result = nullptr;
+        stream.Close(&exec_error);
+        return grpc::Status::OK;
       }
-    } else {
-      mtdd::ResultChunk schema_chunk;
-      schema_chunk.set_kind(mtdd::CHUNK_KIND_SCHEMA);
-      schema_chunk.set_flatbuffer_meta(codec::EncodeResultSchema(encoded.schema));
-      if (!writer->Write(schema_chunk)) {
-        return grpc::Status(grpc::StatusCode::CANCELLED, "client cancelled stream");
+
+      if (num_rows == 0 && schema_open) {
+        break;
+      }
+
+      if (!schema_open) {
+        schema_meta = codec::BuildSchemaMeta(fetch);
+        schema_open = true;
+      }
+
+      if (num_rows == 0) {
+        continue;
+      }
+
+      for (int row_begin = 0; row_begin < num_rows; row_begin += wire_batch_rows) {
+        const int row_end = std::min(row_begin + wire_batch_rows, num_rows);
+        const std::string payload = codec::EncodeRawPgBatch(fetch, row_begin, row_end);
+        total_rows += row_end - row_begin;
+
+        if (!SendBatchChunk(context, writer, schema_meta, &batch_sent, payload)) {
+          stream.Abort();
+          return grpc::Status(
+              grpc::StatusCode::CANCELLED,
+              context->IsCancelled() ? "cancelled" : "client cancelled stream");
+        }
       }
     }
 
-    mtdd::ResultChunk trailer_chunk;
-    trailer_chunk.set_kind(mtdd::CHUNK_KIND_TRAILER);
-    trailer_chunk.set_flatbuffer_meta(codec::EncodeResultTrailer(encoded.trailer));
-    writer->Write(trailer_chunk);
+    if (schema_open && !batch_sent) {
+      const std::string empty_payload = codec::EncodeRawPgBatch(last_result, 0, 0);
+      if (!SendBatchChunk(context, writer, schema_meta, &batch_sent, empty_payload)) {
+        stream.Abort();
+        return grpc::Status(
+            grpc::StatusCode::CANCELLED,
+            context->IsCancelled() ? "cancelled" : "client cancelled stream");
+      }
+    }
+
+    codec::ResultTrailer trailer;
+    if (schema_open) {
+      trailer.command_tag = schema_meta.command + " " + std::to_string(total_rows);
+      trailer.row_count = total_rows;
+    } else if (last_result != nullptr) {
+      trailer = codec::BuildCommandTrailer(last_result);
+    } else {
+      trailer.command_tag = "SELECT 0";
+      trailer.row_count = 0;
+    }
+    trailer.oid = 0;
+
+    if (!WriteResultChunk(writer, mtdd::CHUNK_KIND_TRAILER, codec::EncodeResultTrailer(trailer), {})) {
+      stream.Abort();
+      return grpc::Status(grpc::StatusCode::CANCELLED, "client cancelled stream");
+    }
+
+    if (last_result != nullptr) {
+      PQclear(last_result);
+      last_result = nullptr;
+    }
+    stream.Close(&exec_error);
+    return grpc::Status::OK;
   } catch (const std::exception& ex) {
-    executor_copy->FinishQuery(execution);
+    if (last_result != nullptr) {
+      PQclear(last_result);
+    }
+    stream.Abort();
     pg::PgErrorMeta meta;
     meta.message = ex.what();
     WriteErrorChunk(writer, meta);
+    return grpc::Status::OK;
   }
-
-  return grpc::Status::OK;
 }
 
 grpc::Status MtddShardServiceImpl::Disconnect(
@@ -233,7 +353,6 @@ grpc::Status MtddShardServiceImpl::Disconnect(
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, message);
   }
 
-  // Client channel teardown only; shared pool and pinned sessions remain for other apps.
   log::Info("disconnect", "acknowledged (shared pool unchanged)");
   response->set_ok(true);
   return grpc::Status::OK;

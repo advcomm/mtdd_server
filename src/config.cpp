@@ -204,8 +204,12 @@ ServerConfig LoadConfigFromEnv() {
 
   config.host_index = ParseOptionalHostIndex(std::getenv("MTDD_HOST_INDEX"));
   config.pool_size = ParsePositiveInt("MTDD_POOL_SIZE", std::getenv("MTDD_POOL_SIZE"), config.pool_size);
-  config.arrow_batch_rows =
-      ParsePositiveInt("MTDD_ARROW_BATCH_ROWS", std::getenv("MTDD_ARROW_BATCH_ROWS"), config.arrow_batch_rows);
+  config.pg_fetch_rows =
+      ParsePositiveInt("MTDD_PG_FETCH_ROWS", std::getenv("MTDD_PG_FETCH_ROWS"), config.pg_fetch_rows);
+  config.pg_wire_batch_rows = ParsePositiveInt(
+      "MTDD_PG_WIRE_BATCH_ROWS",
+      std::getenv("MTDD_PG_WIRE_BATCH_ROWS"),
+      config.pg_wire_batch_rows);
   config.pg_connect_timeout_sec = ParsePositiveInt(
       "MTDD_PG_CONNECT_TIMEOUT_SEC", std::getenv("MTDD_PG_CONNECT_TIMEOUT_SEC"), config.pg_connect_timeout_sec);
   config.max_sessions =

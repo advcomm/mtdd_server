@@ -31,7 +31,7 @@ class MtddShardServiceImpl final : public mtdd::MtddShard::Service {
  private:
   bool ValidateHostIndex(int32_t host_index, std::string* message) const;
   pg::ConnectParams BuildConnectParams(const mtdd::ConnectRequest& request) const;
-  bool EnsureArrowFormat(const mtdd::QueryRequest& request, std::string* message) const;
+  bool EnsureQueryRequest(const mtdd::QueryRequest& request, std::string* message) const;
   void WriteErrorChunk(grpc::ServerWriter<mtdd::ResultChunk>* writer, const pg::PgErrorMeta& error);
 
   ServerConfig config_;

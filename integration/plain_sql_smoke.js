@@ -2,7 +2,7 @@
 
 const grpc = require('@grpc/grpc-js')
 const protoLoader = require('@grpc/proto-loader')
-const { buildQueryRequestPayload } = require('./lib/grpc-arrow-client')
+const { buildQueryRequestPayload } = require('./lib/grpc-query-client')
 const { assertProtoExists } = require('./lib/proto-path')
 
 const SERVER = process.env.MTDD_SERVER_ADDR || '127.0.0.1:50051'

@@ -18,15 +18,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wget lsb-release
-          wget -q https://packages.apache.org/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-noble.deb
-          sudo apt-get install -y ./apache-arrow-apt-source-latest-noble.deb
-          sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config \
             protobuf-compiler protobuf-compiler-grpc \
             libgrpc++-dev libprotobuf-dev \
-            libpq-dev libarrow-dev libflatbuffers-dev libgtest-dev
+            libpq-dev libflatbuffers-dev libgtest-dev
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DMTDD_BUILD_TESTS=ON

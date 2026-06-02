@@ -6,6 +6,21 @@ Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/
 
 `mtdd_server` executes **plain SQL text** via libpq `PQexecParams`. Prepared statements (`QueryRequest.name` set) are rejected with `prepared statements are not supported`.
 
+## Query streaming
+
+`QueryStream` uses PostgreSQL **cursors** (`DECLARE` / `FETCH FORWARD`) for `SELECT` / `WITH` / `TABLE` / `VALUES` queries. Tuple results are streamed as **raw libpq binary cells** (RPGB v1) in `ResultChunk.payload`; the client decodes PG OIDs locally. `QueryRequest.result_format` must be `1` (binary).
+
+| Variable | Purpose |
+|----------|---------|
+| `MTDD_PG_FETCH_ROWS` | Rows per PostgreSQL `FETCH` (default `10000`) |
+| `MTDD_PG_WIRE_BATCH_ROWS` | Rows per raw PG batch / gRPC chunk (default `1000`) |
+
+Control chunks: `SCHEMA` (FlexBuffers `ResultSchema` + optional first batch), `BATCH` (RPGB v1 payload only), `TRAILER` (`ResultTrailer`), or `ERROR`.
+
+Each `BATCH` payload is column-major: for each column and row, `uint8 is_null`, then `uint32 len` + raw `PQgetvalue` bytes (no server-side type conversion).
+
+Command-only queries (`INSERT`, `UPDATE`, etc.) use a single execution and return `TRAILER` without row batches.
+
 ## nginx + unix domain socket
 
 `mtdd_server` does **not** terminate TLS or handle compression. It listens on a **unix domain socket** with plain gRPC only. nginx on the same host:

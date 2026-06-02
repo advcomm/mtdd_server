@@ -6,7 +6,7 @@ package mtdd;
 // host_index so it knows which shard it represents.
 service MtddShard {
   rpc Connect(ConnectRequest) returns (ConnectResponse);
-  // libpq-semantic query; results stream as FlatBuffers metadata + Arrow IPC.
+  // libpq-semantic query; tuple results stream as raw PG binary batches + FlexBuffers control chunks.
   rpc QueryStream(QueryRequest) returns (stream ResultChunk);
   rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
 }
@@ -67,14 +67,16 @@ message QueryRequest {
   reserved 7;
   reserved "response_format";
   repeated QueryParam params = 8;
-  // 0 = text results, 1 = binary (libpq resultFormat).
+  // Must be 1 (libpq binary). Text results are rejected by the server.
   int32 result_format = 9;
 }
 
 message ResultChunk {
   ChunkKind kind = 1;
+  // FlexBuffers ResultSchema (first SCHEMA chunk), ResultTrailer, or PgError.
   bytes flatbuffer_meta = 2;
-  bytes arrow_ipc = 3;
+  // Raw PG batch payload (RPGB v1); empty for SCHEMA/TRAILER/ERROR-only chunks.
+  bytes payload = 3;
 }
 
 message DisconnectRequest {

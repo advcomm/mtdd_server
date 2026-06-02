@@ -1,6 +1,6 @@
 # mtdd_server
 
-Shard-side gRPC server for [@advcomm/mtdd](https://github.com/advcomm/mtdd). Each instance runs on a database host behind nginx, accepts `Connect` / `QueryStream` / `Disconnect`, executes SQL on **local PostgreSQL** via libpq, and streams results as FlexBuffers metadata plus Apache Arrow IPC.
+Shard-side gRPC server for [@advcomm/mtdd](https://github.com/advcomm/mtdd). Each instance runs on a database host behind nginx, accepts `Connect` / `QueryStream` / `Disconnect`, executes SQL on **local PostgreSQL** via libpq, and streams results as FlexBuffers control metadata plus raw libpq cell bytes (RPGB v1 batches).
 
 The same binary can expose **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `grpc-notify-client.ts` (client commit [78961be](https://github.com/advcomm/mtdd/commit/78961bee2d157e251cbae5867cf070cda9364919)).
 
@@ -8,14 +8,14 @@ The same binary can expose **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY t
 
 - C++17 compiler
 - CMake 3.20+
-- gRPC, Protobuf, libpq, Apache Arrow, FlatBuffers
+- gRPC, Protobuf, libpq, FlatBuffers
 
 On Ubuntu 24.04:
 
 ```bash
 sudo apt-get install -y build-essential cmake pkg-config \
   protobuf-compiler protobuf-compiler-grpc libgrpc++-dev libprotobuf-dev \
-  libpq-dev libarrow-dev libflatbuffers-dev libgtest-dev
+  libpq-dev libflatbuffers-dev libgtest-dev
 ```
 
 Or use [vcpkg](https://vcpkg.io) with the included `vcpkg.json`:
@@ -44,7 +44,8 @@ Binary: `build/mtdd_server`
 | `MTDD_HOST_INDEX` | _(unset)_ | Required when `MTDD_ENV=production`; must match client `Connect.host_index` |
 | `MTDD_PG_HOST` | `127.0.0.1` | libpq host (local Postgres) |
 | `MTDD_POOL_SIZE` | `8` | Pool size for non-session queries |
-| `MTDD_ARROW_BATCH_ROWS` | `10000` | Max rows per Arrow IPC batch |
+| `MTDD_PG_FETCH_ROWS` | `10000` | Rows per PostgreSQL `FETCH` from the cursor |
+| `MTDD_PG_WIRE_BATCH_ROWS` | `1000` | Rows per raw PG binary batch on the wire (each gRPC `BATCH` chunk) |
 | `MTDD_PG_CONNECT_TIMEOUT_SEC` | `5` | libpq connect timeout |
 | `MTDD_MAX_SESSIONS` | `512` | Pinned `session_id` connections |
 | `MTDD_GRPC_MAX_THREADS` | CPU count | gRPC sync server threads |
@@ -78,10 +79,9 @@ export MTDD_GRPC_REFLECTION=0
 
 ## Client setup
 
-Production apps must use Arrow streaming:
+Production apps must send `QueryRequest.result_format = 1` (libpq binary) and decode RPGB v1 batches from `ResultChunk.payload`:
 
 ```bash
-export MTDD_GRPC_RESULT_FORMAT=arrow
 export MTDD_GRPC_PORT=50051
 export DB_HOST='["10.0.1.10","10.0.1.11"]'
 # Multi-shard: point all apps at one notify coordinator
@@ -164,7 +164,7 @@ docker compose --profile shard-only up shard_only
 
 ## Wire format
 
-`QueryStream` chunk order: `SCHEMA` → `BATCH`* → `TRAILER`, or `ERROR` on failure. Column data is Arrow IPC; control metadata is FlexBuffers (same layout as the client `result-meta-codec.ts`).
+`QueryStream` pipelines raw libpq cell batches over gRPC (RPGB v1 in `ResultChunk.payload`). Each batch holds up to `MTDD_PG_WIRE_BATCH_ROWS` rows in column-major order: per cell, `uint8 is_null`, then `uint32 len` + raw `PQgetvalue` bytes. PostgreSQL cursors fetch up to `MTDD_PG_FETCH_ROWS` rows per round trip. Chunks: `SCHEMA` (FlexBuffers `ResultSchema` + optional first batch), `BATCH` (further batches), `TRAILER`, or `ERROR`.
 
 ## License
 
