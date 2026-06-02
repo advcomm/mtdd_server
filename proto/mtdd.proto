@@ -29,16 +29,20 @@ enum ChunkKind {
 }
 
 // libpq connection keywords (PQconnectdbParams).
+// Client (@advcomm/mtdd buildConnectRequest) sends: host_index, dbname, database,
+// user, password, port, host. Server uses host_index, dbname/database, user,
+// password, port; ignores host/sslmode/connect_timeout/application_name (see
+// docs/OPERATIONS.md#initial-connect-rpc-payload).
 message ConnectRequest {
-  int32 host_index = 1;
+  int32 host_index = 1;  // Required; validated against MTDD_HOST_INDEX in production.
   string dbname = 2;
   string user = 3;
   string password = 4;
-  int32 port = 5;
-  string host = 6;
-  string sslmode = 7;
-  string connect_timeout = 8;
-  string application_name = 9;
+  int32 port = 5;        // Postgres port (default 5432); not the gRPC port.
+  string host = 6;       // Client shard IP from DB_HOST; not used for libpq (MTDD_PG_HOST).
+  string sslmode = 7;    // Unused; gRPC TLS is MTDD_GRPC_TLS_* on the client.
+  string connect_timeout = 8;  // Unused; server uses MTDD_PG_CONNECT_TIMEOUT_SEC.
+  string application_name = 9; // Unused; server sets application_name=mtdd_server.
   // Deprecated alias for dbname; clients may set either.
   string database = 10;
 }

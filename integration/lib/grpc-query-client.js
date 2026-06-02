@@ -24,6 +24,18 @@ function buildLibpqQueryParams(req) {
   return values.map((value, index) => encodeQueryParam(value, types[index]))
 }
 
+function buildConnectRequest(hostIndex, credentials, roleHost) {
+  return {
+    host_index: hostIndex,
+    dbname: credentials.database,
+    database: credentials.database,
+    user: credentials.user,
+    password: credentials.password,
+    port: credentials.port,
+    host: roleHost,
+  }
+}
+
 function buildQueryRequestPayload(hostIndex, req, sessionId) {
   return {
     host_index: hostIndex,
@@ -119,6 +131,7 @@ function decodeQueryStreamToPgResult(chunks) {
 }
 
 module.exports = {
+  buildConnectRequest,
   buildQueryRequestPayload,
   decodeQueryStreamToPgResult,
 }

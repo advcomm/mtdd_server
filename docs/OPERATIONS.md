@@ -6,6 +6,62 @@ Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/
 
 `mtdd_server` executes **plain SQL text** via libpq `PQexecParams`. Prepared statements (`QueryRequest.name` set) are rejected with `prepared statements are not supported`.
 
+## Initial Connect RPC payload
+
+When `@advcomm/mtdd` preloads (`register` → `initGrpcHub`), it opens one gRPC channel per shard endpoint and immediately calls the unary **`Connect`** RPC. This is separate from the TCP/unix **transport** target (nginx or `MTDD_GRPC_UNIX_SOCKET`).
+
+Flow:
+
+1. `new MtddShard(address, tlsCreds)` — `address` is `DB_HOST` IP + `MTDD_GRPC_PORT`, or `MTDD_GRPC_UNIX_SOCKET` in local dev.
+2. `Connect(ConnectRequest)` — first application RPC on that channel.
+3. One `Connect` per write endpoint; optional `Connect` per read replica (read failures are logged, not fatal).
+4. `Connect` uses `getGrpcConnectTimeoutMs()` deadline; retries apply to `QueryStream` only, not `Connect`.
+
+### Client payload (production)
+
+Built by `buildConnectRequest()` in client [`grpc-hub.ts`](https://github.com/advcomm/mtdd/blob/1233831/src/grpc-hub.ts). Credentials from `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT` ([`grpc-credentials.ts`](https://github.com/advcomm/mtdd/blob/1233831/src/grpc-credentials.ts)):
+
+```javascript
+{
+  host_index: hostIndex,              // 0-based index into validated DB_HOST array
+  dbname: credentials.database,       // from DB_NAME
+  database: credentials.database,     // duplicate alias (same value as dbname)
+  user: credentials.user,             // from DB_USER
+  password: credentials.password,     // from DB_PASSWORD
+  port: credentials.port,             // from DB_PORT, default 5432
+  host: roleHost,                     // write or read IP from DB_HOST entry
+}
+```
+
+| Field | Source | Example |
+|-------|--------|---------|
+| `host_index` | Loop index over `DB_HOST` shards | `0`, `1`, … |
+| `dbname` / `database` | `DB_NAME` | `"mydb"` |
+| `user` | `DB_USER` | `"appuser"` |
+| `password` | `DB_PASSWORD` | `"secret"` |
+| `port` | `DB_PORT` (default 5432) | `5432` |
+| `host` | Write or read IP from `DB_HOST` entry | `"10.0.0.5"` |
+
+**Not sent** by the production client (proto3 defaults): `sslmode`, `connect_timeout`, `application_name`. gRPC TLS is configured via `MTDD_GRPC_TLS_*`, not `ConnectRequest.sslmode`.
+
+### Server handling
+
+| ConnectRequest field | Used by server? | Server source |
+|---------------------|-----------------|---------------|
+| `host_index` | Yes | Validated against `MTDD_HOST_INDEX` |
+| `dbname` / `database` | Yes | Prefers `dbname`, falls back to `database` |
+| `user`, `password`, `port` | Yes | Passed to libpq |
+| `host` | **No** | Ignored; libpq host is `MTDD_PG_HOST` |
+| `sslmode`, `connect_timeout`, `application_name` | **No** | Server uses `MTDD_PG_CONNECT_TIMEOUT_SEC`; hardcodes `application_name=mtdd_server` |
+
+The client sends `host` (shard routing metadata) and Postgres `port`, but each `mtdd_server` instance always connects to **local** Postgres at `MTDD_PG_HOST`.
+
+### Response
+
+`ConnectResponse { ok, message }` — client rejects if `ok === false` or the RPC errors. On success the `MtddShard` stub stays open for `QueryStream` / `Disconnect`.
+
+When `MTDD_GRPC_MOCK=1`, no real `Connect` RPC is sent.
+
 ## Query streaming
 
 `QueryStream` uses PostgreSQL **cursors** (`DECLARE` / `FETCH FORWARD`) for `SELECT` / `WITH` / `TABLE` / `VALUES` queries. Tuple results are streamed as **raw libpq binary cells** (RPGB v1) in `ResultChunk.payload`; the client decodes PG OIDs locally. `QueryRequest.result_format` must be `1` (binary).

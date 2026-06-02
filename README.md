@@ -62,7 +62,7 @@ Binary: `build/mtdd_server`
 | `MTDD_UNIX_SOCKET_CREATE_DIR` | `0` | Create the socket parent directory if missing |
 | `MTDD_ALLOW_TCP_LISTEN` | `0` | Allow `host:port` listen in production (dev only) |
 
-Database credentials are supplied by the client in `Connect` (from app `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`).
+Database credentials are supplied by the client in `Connect` (from app `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`). See [Initial Connect RPC payload](docs/OPERATIONS.md#initial-connect-rpc-payload) for the exact request shape and server field mapping.
 
 **TLS and compression** are handled by nginx in front of this process. `mtdd_server` uses plain gRPC over a unix domain socket only — do not set `MTDD_GRPC_TLS*`. Clients verify nginx with [@advcomm/mtdd TLS env vars](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md#tls-client--nginx) (commit [78961be+](https://github.com/advcomm/mtdd/commit/78961bee2d157e251cbae5867cf070cda9364919)). See [docs/OPERATIONS.md](docs/OPERATIONS.md).
 

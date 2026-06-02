@@ -2,7 +2,7 @@
 
 const grpc = require('@grpc/grpc-js')
 const protoLoader = require('@grpc/proto-loader')
-const { buildQueryRequestPayload, decodeQueryStreamToPgResult } = require('./lib/grpc-query-client')
+const { buildConnectRequest, buildQueryRequestPayload, decodeQueryStreamToPgResult } = require('./lib/grpc-query-client')
 const { assertProtoExists } = require('./lib/proto-path')
 
 const SERVER = process.env.MTDD_SERVER_ADDR || '127.0.0.1:50051'
@@ -63,14 +63,11 @@ async function main() {
 
   await sleep(2000)
 
-  const connectResponse = await promisifyUnary(client, 'Connect', {
-    host_index: 0,
-    dbname: PG.database,
-    user: PG.user,
-    password: PG.password,
-    port: PG.port,
-    host: '127.0.0.1',
-  })
+  const connectResponse = await promisifyUnary(
+    client,
+    'Connect',
+    buildConnectRequest(0, PG, PG.host),
+  )
 
   if (!connectResponse.ok) {
     throw new Error(`Connect failed: ${connectResponse.message}`)
