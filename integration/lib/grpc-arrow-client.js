@@ -34,10 +34,8 @@ function buildQueryRequestPayload(hostIndex, req, sessionId) {
     name: req.name ?? '',
     row_mode: req.row_mode ?? '',
     session_id: sessionId ?? '',
-    response_format: 'RESPONSE_FORMAT_ARROW',
     result_format: 0,
     params: buildLibpqQueryParams(req),
-    values_json: '',
   }
 }
 

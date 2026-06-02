@@ -2,6 +2,8 @@
 
 Shard-side gRPC server for [@advcomm/mtdd](https://github.com/advcomm/mtdd). Each instance runs on a database host behind nginx, accepts `Connect` / `QueryStream` / `Disconnect`, executes SQL on **local PostgreSQL** via libpq, and streams results as FlexBuffers metadata plus Apache Arrow IPC.
 
+The same process also exposes **`MtddNotify`**, a coordinator-style LISTEN/NOTIFY transport matching the client’s `mtdd-notify-transport.js` (see client commit [e131cf8](https://github.com/advcomm/mtdd/commit/e131cf86c7c322bd28516f494e7a91c95a702902)).
+
 ## Requirements
 
 - C++17 compiler
@@ -59,7 +61,23 @@ export DB_HOST='["10.0.1.10","10.0.1.11"]'
 node --require @advcomm/mtdd/register app.js
 ```
 
-Unary `Query` (JSON) is **not** implemented on this server.
+Unary JSON `Query` was removed from the proto; use `QueryStream` with `MTDD_GRPC_RESULT_FORMAT=arrow`.
+
+## LISTEN / NOTIFY
+
+`LISTEN`, `UNLISTEN`, and `NOTIFY` SQL is handled **client-side** — it never goes through `QueryStream`. When the client is configured with a notify coordinator URL, it uses the **`MtddNotify`** gRPC service instead:
+
+| RPC | Purpose |
+|-----|---------|
+| `Subscribe` | Register `client_id` on `channel` + `tid_scope` |
+| `Unsubscribe` | Remove one channel subscription |
+| `UnsubscribeAll` | Clear all subscriptions for `client_id` |
+| `Publish` | Fan out `{ channel, payload, process_id }` to subscribers |
+| `Watch` | Server stream of notifications for `client_id` |
+
+Channel keys use `${tid_scope}:${channel}` where `tid_scope` is `__global__` or a tenant id (matches `resolveTidScope` on the client). `process_id` is `0` until real backend pids are wired.
+
+`MtddNotify` is registered on the **same gRPC port** as `MtddShard` (`MTDD_LISTEN`). Point the client at this endpoint when `MTDD_NOTIFY_URL` gRPC transport is enabled in `@advcomm/mtdd`.
 
 ## Deployment
 
@@ -89,7 +107,7 @@ Keep [proto/mtdd.proto](proto/mtdd.proto) aligned with the client repo:
 docker compose up --build --abort-on-container-exit integration
 ```
 
-This builds the server, starts Postgres, runs Connect → QueryStream → session transaction → Disconnect smoke tests.
+This builds the server, starts Postgres, runs Connect → QueryStream → session transaction → Disconnect smoke tests, then Subscribe → Publish → Watch notify tests.
 
 ## Wire format
 

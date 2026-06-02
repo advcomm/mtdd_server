@@ -8,6 +8,8 @@
 
 #include "config.h"
 #include "logging.h"
+#include "notify/registry.h"
+#include "service/mtdd_notify_service.h"
 #include "service/mtdd_shard_service.h"
 
 namespace {
@@ -30,12 +32,15 @@ int main() {
     grpc::EnableDefaultHealthCheckService(true);
     grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 
-    mtdd::service::MtddShardServiceImpl service(config);
+    mtdd::notify::NotifyRegistry notify_registry;
+    mtdd::service::MtddShardServiceImpl shard_service(config);
+    mtdd::service::MtddNotifyServiceImpl notify_service(notify_registry);
 
     const std::string listen_target = config.listen_address + ":" + std::to_string(config.listen_port);
     grpc::ServerBuilder builder;
     builder.AddListeningPort(listen_target, grpc::InsecureServerCredentials());
-    builder.RegisterService(&service);
+    builder.RegisterService(&shard_service);
+    builder.RegisterService(&notify_service);
     builder.SetSyncServerOption(grpc::ServerBuilder::SyncServerOption::NUM_CQS, config.grpc_max_threads);
     builder.SetSyncServerOption(grpc::ServerBuilder::SyncServerOption::MIN_POLLERS, 1);
     builder.SetSyncServerOption(grpc::ServerBuilder::SyncServerOption::MAX_POLLERS, config.grpc_max_threads);

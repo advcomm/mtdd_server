@@ -44,4 +44,4 @@ services:
     command:
       - bash
       - -c
-      - cd /work/integration && npm install --silent && node query_smoke.js
+      - cd /work/integration && npm install --silent && node query_smoke.js && node notify_smoke.js

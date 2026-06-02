@@ -51,19 +51,6 @@ bool MtddShardServiceImpl::EnsureArrowFormat(const mtdd::QueryRequest& request, 
     }
     return false;
   }
-  if (!request.values_json().empty()) {
-    if (message != nullptr) {
-      *message = "values_json is not supported; use params";
-    }
-    return false;
-  }
-  const auto fmt = request.response_format();
-  if (fmt == mtdd::RESPONSE_FORMAT_JSON) {
-    if (message != nullptr) {
-      *message = "JSON response format is not supported by this server";
-    }
-    return false;
-  }
   return true;
 }
 
@@ -216,15 +203,6 @@ grpc::Status MtddShardServiceImpl::QueryStream(
     WriteErrorChunk(writer, meta);
   }
 
-  return grpc::Status::OK;
-}
-
-grpc::Status MtddShardServiceImpl::Query(
-    grpc::ServerContext* /*context*/,
-    const mtdd::QueryRequest* /*request*/,
-    mtdd::QueryResponse* response) {
-  response->set_ok(false);
-  response->set_error("unary Query is not supported; set MTDD_GRPC_RESULT_FORMAT=arrow");
   return grpc::Status::OK;
 }
 

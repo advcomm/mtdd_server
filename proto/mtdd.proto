@@ -6,17 +6,19 @@ package mtdd;
 // host_index so it knows which shard it represents.
 service MtddShard {
   rpc Connect(ConnectRequest) returns (ConnectResponse);
-  // Legacy unary JSON result (MTDD_GRPC_RESULT_FORMAT=json).
-  rpc Query(QueryRequest) returns (QueryResponse);
-  // libpq-semantic query with FlatBuffers metadata + Arrow IPC batches.
+  // libpq-semantic query; results stream as FlatBuffers metadata + Arrow IPC.
   rpc QueryStream(QueryRequest) returns (stream ResultChunk);
   rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
 }
 
-enum ResponseFormat {
-  RESPONSE_FORMAT_UNSPECIFIED = 0;
-  RESPONSE_FORMAT_JSON = 1;
-  RESPONSE_FORMAT_ARROW = 2;
+// Coordinator-style LISTEN/NOTIFY transport (matches @advcomm/mtdd mtdd-notify-transport.js).
+service MtddNotify {
+  rpc Subscribe(NotifySubscribeRequest) returns (NotifyAck);
+  rpc Unsubscribe(NotifyUnsubscribeRequest) returns (NotifyAck);
+  rpc UnsubscribeAll(NotifyUnsubscribeAllRequest) returns (NotifyAck);
+  rpc Publish(NotifyPublishRequest) returns (NotifyAck);
+  // Long-lived stream; server pushes NotifyMessage for this client_id.
+  rpc Watch(NotifyWatchRequest) returns (stream NotifyMessage);
 }
 
 enum ChunkKind {
@@ -58,12 +60,13 @@ message QueryParam {
 message QueryRequest {
   int32 host_index = 1;
   string text = 2;
-  // Legacy JSON parameters (RESPONSE_FORMAT_JSON unary Query only).
-  string values_json = 3;
+  reserved 3;
+  reserved "values_json";
   string name = 4;
   string row_mode = 5;
   string session_id = 6;
-  ResponseFormat response_format = 7;
+  reserved 7;
+  reserved "response_format";
   repeated QueryParam params = 8;
   // 0 = text results, 1 = binary (libpq resultFormat).
   int32 result_format = 9;
@@ -75,16 +78,49 @@ message ResultChunk {
   bytes arrow_ipc = 3;
 }
 
-message QueryResponse {
-  bool ok = 1;
-  string error = 2;
-  string result_json = 3;
-}
-
 message DisconnectRequest {
   int32 host_index = 1;
 }
 
 message DisconnectResponse {
   bool ok = 1;
+}
+
+message NotifySubscribeRequest {
+  string client_id = 1;
+  string channel = 2;
+  // "__global__" or tenant id string (matches resolveTidScope on the client).
+  string tid_scope = 3;
+}
+
+message NotifyUnsubscribeRequest {
+  string client_id = 1;
+  string channel = 2;
+  string tid_scope = 3;
+}
+
+message NotifyUnsubscribeAllRequest {
+  string client_id = 1;
+}
+
+message NotifyPublishRequest {
+  string channel = 1;
+  string payload = 2;
+  string tid_scope = 3;
+}
+
+message NotifyWatchRequest {
+  string client_id = 1;
+}
+
+message NotifyMessage {
+  string channel = 1;
+  string payload = 2;
+  int32 process_id = 3;
+}
+
+message NotifyAck {
+  bool ok = 1;
+  string message = 2;
+  int32 delivered_count = 3;
 }

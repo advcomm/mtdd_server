@@ -24,9 +24,6 @@ class MtddShardServiceImpl final : public mtdd::MtddShard::Service {
   grpc::Status QueryStream(grpc::ServerContext* context, const mtdd::QueryRequest* request,
                            grpc::ServerWriter<mtdd::ResultChunk>* writer) override;
 
-  grpc::Status Query(grpc::ServerContext* context, const mtdd::QueryRequest* request,
-                     mtdd::QueryResponse* response) override;
-
   grpc::Status Disconnect(grpc::ServerContext* context, const mtdd::DisconnectRequest* request,
                           mtdd::DisconnectResponse* response) override;
 

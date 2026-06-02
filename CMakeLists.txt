@@ -68,6 +68,9 @@ set(MTDD_SERVER_SOURCES
   src/pg/session_store.cpp
   src/pg/query_executor.cpp
   src/service/mtdd_shard_service.cpp
+  src/notify/channel_key.cpp
+  src/notify/registry.cpp
+  src/service/mtdd_notify_service.cpp
 )
 
 add_executable(mtdd_server ${MTDD_SERVER_SOURCES})
