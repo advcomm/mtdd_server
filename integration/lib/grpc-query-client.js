@@ -52,6 +52,17 @@ function commandFromTag(commandTag, fallback) {
   return token ? token.toUpperCase() : fallback ?? 'SELECT'
 }
 
+function chunkPayload(chunk) {
+  return chunk.payload ?? chunk.Payload
+}
+
+function rpgbPayloadBuffer(payload) {
+  if (!payload || payload.length === 0) {
+    return null
+  }
+  return Buffer.isBuffer(payload) ? payload : Buffer.from(payload)
+}
+
 function decodeQueryStreamToPgResult(chunks) {
   let schema = null
   let trailer = null
@@ -72,19 +83,19 @@ function decodeQueryStreamToPgResult(chunks) {
       if (meta && meta.length > 0) {
         schema = resultMeta.decodeResultSchema(meta)
       }
-      const payload = chunk.payload ?? chunk.Payload
-      if (schema && payload && payload.length > 0) {
-        rows.push(...decodeRawPgBatch(Buffer.from(payload), schema.fields))
+      const payload = rpgbPayloadBuffer(chunkPayload(chunk))
+      if (schema && payload) {
+        rows.push(...decodeRawPgBatch(payload, schema.fields))
       }
       continue
     }
     if (kind === CHUNK_KIND_BATCH || kind === 2) {
-      const payload = chunk.payload ?? chunk.Payload
+      const payload = rpgbPayloadBuffer(chunkPayload(chunk))
       if (!schema) {
         throw new Error('BATCH chunk before SCHEMA')
       }
-      if (payload && payload.length > 0) {
-        rows.push(...decodeRawPgBatch(Buffer.from(payload), schema.fields))
+      if (payload) {
+        rows.push(...decodeRawPgBatch(payload, schema.fields))
       }
       continue
     }

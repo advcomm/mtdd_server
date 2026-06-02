@@ -1,6 +1,6 @@
 # MTDD server operations
 
-Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md) (client commit [07c20bc](https://github.com/advcomm/mtdd/commit/07c20bcad5a6cbdfe76f885d00cee16723ba7849) — `grpc-query-codec`, RPGB streaming).
+Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/blob/main/docs/OPERATIONS.md) (client commit [1233831](https://github.com/advcomm/mtdd/commit/1233831e2596f6496a246e695198921920771728) — `grpc-query-codec`, RPGB + PG binary endian docs).
 
 ## Plain SQL only
 
@@ -18,6 +18,28 @@ Companion to [@advcomm/mtdd docs/OPERATIONS.md](https://github.com/advcomm/mtdd/
 Control chunks: `SCHEMA` (FlexBuffers `ResultSchema` + optional first batch), `BATCH` (RPGB v1 payload only), `TRAILER` (`ResultTrailer`), or `ERROR`.
 
 Each `BATCH` payload is column-major: for each column and row, `uint8 is_null`, then `uint32 len` + raw `PQgetvalue` bytes (no server-side type conversion).
+
+### Binary endianness
+
+Two layers apply; the server only constructs the outer RPGB frame:
+
+| Layer | Byte order | Handled by |
+|-------|------------|------------|
+| RPGB batch header and cell lengths | **Little-endian** `uint32` | `mtdd_server` (`raw_batch_encoder.cpp`) |
+| PostgreSQL cell payloads inside each cell | **Per libpq / PG binary rules** | Client (`pg-binary-decode.ts`) |
+
+Cell bytes are copied verbatim from libpq — the server never decodes or byte-swaps them.
+
+PostgreSQL binary cells (`field.format = 1`), as decoded by the client:
+
+| Types | Endianness |
+|-------|------------|
+| `int2`, `int4`, `int8`, `date`, `timestamp`, `timestamptz`, `numeric` | Big-endian |
+| `float4`, `float8` | IEEE 754 in **PostgreSQL server native** byte order |
+| `bool`, `bytea`, `uuid` | Opaque bytes (no multi-byte integer order) |
+| Text (`format = 0`) | UTF-8 |
+
+Production pairing assumes PostgreSQL runs on **little-endian** hosts (Linux x86_64 / aarch64), matching the client’s float decode path. Big-endian PostgreSQL would require client-side float endian detection (not implemented).
 
 Command-only queries (`INSERT`, `UPDATE`, etc.) use a single execution and return `TRAILER` without row batches.
 
@@ -113,9 +135,9 @@ This repo is the **source of truth** for [proto/mtdd.proto](../proto/mtdd.proto)
 MTDD_PROTO_REF=main ./scripts/sync-proto.sh
 ```
 
-Default upstream ref: `07c20bcad5a6cbdfe76f885d00cee16723ba7849` ([@advcomm/mtdd](https://github.com/advcomm/mtdd) `grpc-query-codec` / `ResultChunk.payload`).
+Default upstream ref: `1233831e2596f6496a246e695198921920771728` ([@advcomm/mtdd](https://github.com/advcomm/mtdd) recommended; minimum `@bced8d7` / `@07c20bc`).
 
-Pair **@advcomm/mtdd@bced8d7** (or newer, **07c20bc** recommended) with **mtdd_server ≥ 765da45** for `QueryStream`.
+Pair **@advcomm/mtdd@1233831** (or `@07c20bc`+) with **mtdd_server ≥ 765da45** (`≥ eac5748` recommended) for `QueryStream`.
 
 ## Integration tests
 

@@ -141,7 +141,7 @@ gRPC health starts `NOT_SERVING` until the first successful `Connect` probes Pos
 
 ```bash
 ./scripts/sync-proto.sh
-# MTDD_PROTO_REF=07c20bcad5a6cbdfe76f885d00cee16723ba7849  (default)
+# MTDD_PROTO_REF=1233831e2596f6496a246e695198921920771728  (default)
 ```
 
 Run manually from GitHub Actions → build → Run workflow (automatic CI on push/PR is disabled).
@@ -164,7 +164,7 @@ docker compose --profile shard-only up shard_only
 
 ## Wire format
 
-`QueryStream` pipelines raw libpq cell batches over gRPC (RPGB v1 in `ResultChunk.payload`). Each batch holds up to `MTDD_PG_WIRE_BATCH_ROWS` rows in column-major order: per cell, `uint8 is_null`, then `uint32 len` + raw `PQgetvalue` bytes. PostgreSQL cursors fetch up to `MTDD_PG_FETCH_ROWS` rows per round trip. Chunks: `SCHEMA` (FlexBuffers `ResultSchema` + optional first batch), `BATCH` (further batches), `TRAILER`, or `ERROR`.
+`QueryStream` pipelines raw libpq cell batches over gRPC (RPGB v1 in `ResultChunk.payload`). Each batch holds up to `MTDD_PG_WIRE_BATCH_ROWS` rows in column-major order: per cell, `uint8 is_null`, then `uint32 len` + raw `PQgetvalue` bytes. RPGB framing uses **little-endian** `uint32`; PG cell bytes are opaque libpq payloads (integers/date/timestamp **big-endian** in PG binary; floats follow PostgreSQL host byte order — see [docs/OPERATIONS.md](docs/OPERATIONS.md)). PostgreSQL cursors fetch up to `MTDD_PG_FETCH_ROWS` rows per round trip. Chunks: `SCHEMA` (FlexBuffers `ResultSchema` + optional first batch), `BATCH` (further batches), `TRAILER`, or `ERROR`.
 
 ## License
 

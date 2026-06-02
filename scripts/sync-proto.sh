@@ -2,8 +2,8 @@
 # Compare local proto/mtdd.proto with upstream advcomm/mtdd.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# Default: @advcomm/mtdd RPGB client (grpc-query-codec, ResultChunk.payload, result_format=1).
-REF="${MTDD_PROTO_REF:-07c20bcad5a6cbdfe76f885d00cee16723ba7849}"
+# Default: @advcomm/mtdd RPGB client (grpc-query-codec, binary endian docs @1233831).
+REF="${MTDD_PROTO_REF:-1233831e2596f6496a246e695198921920771728}"
 UPSTREAM="${MTDD_PROTO_URL:-https://raw.githubusercontent.com/advcomm/mtdd/${REF}/proto/mtdd.proto}"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT

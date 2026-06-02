@@ -1,5 +1,16 @@
 'use strict'
 
+/**
+ * RPGB v1 wire layout (matches raw_batch_encoder.cpp):
+ * - Batch header (magic, version, row_count, col_count): uint32 LE
+ * - Per cell: null flag (1 byte; 1 = NULL), then if non-null: value length uint32 LE + bytes
+ *
+ * PostgreSQL binary cell payloads (libpq format=1), byte order per PG docs:
+ * - int2, int4, int8, date, timestamp/timestamptz, numeric header/digits: big-endian
+ * - float4, float8: IEEE 754 in server native byte order (x86_64 → little-endian)
+ * - bool, bytea, uuid: opaque bytes (no multi-byte integer endianness)
+ * - format=0: UTF-8 text
+ */
 const RAW_PG_BATCH_MAGIC = 0x42504752
 const RAW_PG_BATCH_VERSION = 1
 
@@ -178,11 +189,12 @@ function decodeRawPgBatch(payload, fields) {
   }
 
   const rows = Array.from({ length: numRows }, () => ({}))
+  const names = fields.map((field) => field.name)
   let offset = 16
 
   for (let col = 0; col < numCols; col++) {
     const field = fields[col]
-    const name = field.name
+    const name = names[col]
     for (let row = 0; row < numRows; row++) {
       if (offset >= buffer.length) {
         throw new Error('raw PG batch truncated')

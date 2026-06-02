@@ -2,7 +2,6 @@
 
 const grpc = require('@grpc/grpc-js')
 const protoLoader = require('@grpc/proto-loader')
-const { buildQueryRequestPayload } = require('./lib/grpc-query-client')
 const { assertProtoExists } = require('./lib/proto-path')
 
 const SERVER = process.env.MTDD_SERVER_ADDR || '127.0.0.1:50051'
@@ -35,11 +34,17 @@ function queryStream(client, request, deadlineMs = 30000) {
 async function main() {
   const { client } = loadClient()
 
-  const request = buildQueryRequestPayload(0, {
+  // Production client strips name via buildQueryRequestPayload; send raw wire request
+  // to verify the server still rejects non-empty QueryRequest.name.
+  const request = {
+    host_index: 0,
     text: 'SELECT 1',
     name: 'prepared_stmt',
-    values: [],
-  })
+    row_mode: '',
+    session_id: '',
+    result_format: 1,
+    params: [],
+  }
 
   try {
     await queryStream(client, request)
